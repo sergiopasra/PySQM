@@ -1,4 +1,3 @@
-
 # PySQM main program
 # ____________________________
 #
@@ -20,15 +19,14 @@
 # along with PySQM.  If not, see <http://www.gnu.org/licenses/>.
 # ____________________________
 
-
-import os,sys
-import time
-import datetime
-import argparse
+import logging
 
 # Read input arguments (if any)
 
+logging.basicConfig(level=logging.DEBUG)
+
 import pysqm.settings as settings
+
 InputArguments = settings.ArgParser()
 configfilename = InputArguments.config
 
@@ -47,8 +45,11 @@ import pysqm.plot
 # Dont worry if some of these are missing in your setup.
 
 def relaxed_import(themodule):
-    try: exec('import '+str(themodule))
-    except: pass
+    try:
+        exec ('import ' + str(themodule))
+    except:
+        pass
+
 
 relaxed_import('socket')
 relaxed_import('serial')
@@ -58,47 +59,48 @@ relaxed_import('pysqm.email')
 # Conditional imports
 
 # If the old format (SQM_LE/SQM_LU) is used, replace _ with -
-config._device_type = config._device_type.replace('_','-')
+config._device_type = config._device_type.replace('_', '-')
 
 if config._device_type == 'SQM-LE':
-    import socket
+    pass
 elif config._device_type == 'SQM-LU':
-    import serial
+    pass
 if config._use_mysql:
-    import _mysql
+    pass
 
 # Create directories if needed
-for directory in [config.monthly_data_directory,config.daily_data_directory,config.current_data_directory]:
+for directory in [config.monthly_data_directory, config.daily_data_directory, config.current_data_directory]:
     if not os.path.exists(directory):
         os.makedirs(directory)
 
 # Select the device to be used based on user input
 # and start the measures
 
-if config._device_type=='SQM-LU':
+if config._device_type == 'SQM-LU':
     mydevice = SQMLU()
-elif config._device_type=='SQM-LE':
+elif config._device_type == 'SQM-LE':
     mydevice = SQMLE()
 else:
-    print('ERROR. Unknown device type '+str(config._device_type))
+    logging.error('Unknown device type %s', config._device_type)
     exit(0)
 
+
 def loop():
-    '''
-    Ephem is used to calculate moon position (if above horizon)
-    and to determine start-end times of the measures
-    '''
+
+    # Ephem is used to calculate moon position (if above horizon)
+    # and to determine start-end times of the measures
+    logging.basicConfig(level=logging.DEBUG)
     observ = define_ephem_observatory()
     niter = 0
-    DaytimePrint=True
-    print('Starting readings ...')
+    DaytimePrint = True
+    logging.info('Starting readings ...')
     while True:
         # The programs works as a daemon
         utcdt = mydevice.read_datetime()
-        #print (str(mydevice.local_datetime(utcdt))),
+        # print (str(mydevice.local_datetime(utcdt))),
         if True or mydevice.is_nighttime(observ):
             # If we are in a new night, create the new file.
-            config._send_to_datacenter = False ### Not enabled by default
+            config._send_to_datacenter = False  ### Not enabled by default
             if config._send_to_datacenter and (niter == 0):
                 mydevice.save_data_datacenter("NEWFILE")
 
@@ -113,7 +115,8 @@ def loop():
                                                 PauseMeasures=10
                                                 )
             except:
-                print('Connection lost')
+                logging.info('Connection lost')
+                # FIXME: not appropriated in all cases
                 if config._reboot_on_connlost:
                     time.sleep(600)
                     os.system('reboot.bat')
@@ -123,7 +126,7 @@ def loop():
                 continue
 
             (timeutc_mean, timelocal_mean, temp_sensor,
-             freq_sensor, ticks_uC,sky_brightness) = data
+             freq_sensor, ticks_uC, sky_brightness) = data
 
             formatted_data = mydevice.format_content(
                 timeutc_mean,
@@ -140,7 +143,6 @@ def loop():
             if config._send_to_datacenter:
                 mydevice.save_data_datacenter(formatted_data)
 
-
             mydevice.data_cache(formatted_data,
                                 number_measures=config._cache_measures,
                                 niter=niter)
@@ -150,37 +152,34 @@ def loop():
                 try:
                     pysqm.plot.make_plot(send_emails=False, write_stats=False)
                 except:
-                    print('Warning: Error plotting data.')
-                    print(sys.exc_info())
+                    logging.warn('Problem plotting data.', exc_info=True)
 
             if not DaytimePrint:
                 DaytimePrint = True
 
-            MainDeltaSeconds = (datetime.datetime.now()-StartDateTime).total_seconds()
-            time.sleep(max(1,config._delay_between_measures-MainDeltaSeconds))
+            MainDeltaSeconds = (datetime.datetime.now() - StartDateTime).total_seconds()
+            time.sleep(max(1, config._delay_between_measures - MainDeltaSeconds))
 
         else:
             # Daytime, print info
             if DaytimePrint:
                 utcdt = utcdt.strftime("%Y-%m-%d %H:%M:%S")
-                print (utcdt),
-                print('. Daytime. Waiting until '+str(mydevice.next_sunset(observ)))
+                logging.info("%s", utcdt)
+                logging.info('Daytime. Waiting until %s', mydevice.next_sunset(observ))
                 DaytimePrint = False
             if niter > 0:
                 mydevice.flush_cache()
                 if config._send_data_by_email:
                     try:
-                        pysqm.plot.make_plot(send_emails=True,write_stats=True)
+                        pysqm.plot.make_plot(send_emails=True, write_stats=True)
                     except:
-                        print('Warning: Error plotting data / sending email.')
-                        print(sys.exc_info())
+                        logging.warn('Error plotting data / sending email.',exc_info=True)
 
                 else:
                     try:
-                        pysqm.plot.make_plot(send_emails=False,write_stats=True)
+                        pysqm.plot.make_plot(send_emails=False, write_stats=True)
                     except:
-                        print('Warning: Error plotting data.')
-                        print(sys.exc_info())
+                        logging.warn('Problem plotting data.', exc_info=True)
 
                 niter = 0
 
@@ -188,7 +187,4 @@ def loop():
             if config._send_to_datacenter:
                 mydevice.save_data_datacenter("")
 
-
             time.sleep(300)
-
-

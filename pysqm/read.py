@@ -20,6 +20,7 @@
 # ____________________________
 
 
+import logging
 import inspect
 import os
 import struct
@@ -95,7 +96,7 @@ def filtered_mean(array, sigma=3):
 
     # Return the mean of filtered data or the median.
     if np.size(filtered_values) == 0:
-        print('Warning: High dispersion found on last measures')
+        logging.warn('High dispersion found on last measures')
         filtered_mean = data_median
     else:
         filtered_mean = np.mean(filtered_values)
@@ -316,7 +317,7 @@ class device(observatory):
         if len(self.DataCache.split("\n")) >= number_measures + 1:
             self.save_data(self.DataCache)
             self.DataCache = ""
-            print(str(niter) + '\t' + formatted_data[:-1])
+            logging.info('%d\t%s', niter, formatted_data[:-1])
 
     def flush_cache(self):
         ''' Flush the data cache '''
@@ -369,8 +370,8 @@ class SQM(device):
             DeltaSeconds = (datetime.datetime.now() - InitialDateTime).total_seconds()
 
             # Just to show on screen that the program is alive and running
-            sys.stdout.write('.')
-            sys.stdout.flush()
+            # sys.stdout.write('.')
+            # sys.stdout.flush()
 
             if (Nremaining > 0): time.sleep(max(1, PauseMeasures - DeltaSeconds))
 
@@ -458,7 +459,7 @@ class SQMLE(SQM):
         super(SQMLE, self).__init__()
 
         try:
-            print('Trying fixed device address %s ... ' % str(config._device_addr))
+            logging.info('Trying fixed device address %s ... ', config._device_addr)
             self.addr = config._device_addr
             self.port = 10001
             self.start_connection()
@@ -470,11 +471,11 @@ class SQMLE(SQM):
             self.start_connection()
 
         # Clearing buffer
-        print('Clearing buffer ... |'),
+        logging.info('Clearing buffer ... |')
         buffer_data = self.read_buffer()
-        print(buffer_data),
-        print('| ... DONE')
-        print('Reading test data (ix,cx,rx)...')
+        logging.info(buffer_data),
+        logging.info('| ... DONE')
+        logging.info('Reading test data (ix,cx,rx)...')
         time.sleep(1)
         self.ix_readout = self.read_metadata(tries=10)
         time.sleep(1)
@@ -509,7 +510,7 @@ class SQMLE(SQM):
                 pass
 
         if addr[0] is None:
-            print('ERR. Device not found!')
+            logging.error('Device not found!')
             raise
         else:
             return addr[0]
@@ -574,14 +575,12 @@ class SQMLE(SQM):
             if (msg != -1): read_err = False
 
         # Check that msg contains data
-        if read_err == True:
-            print('ERR. Reading the photometer!: %s' % str(msg))
-            if DEBUG:
-                raise
+        if read_err:
+            logging.error('Reading the photometer!: %s', msg)
             return -1
         else:
-            print('Sensor info: ' + str(msg)),
-            return (msg)
+            logging.info('Sensor info: %s', msg)
+            return msg
 
     def read_calibration(self, tries=1):
         ''' Read the calibration parameters '''
@@ -607,11 +606,10 @@ class SQMLE(SQM):
 
         # Check that msg contains data
         if read_err == True:
-            print('ERR. Reading the photometer!: %s' % str(msg))
-            if (DEBUG): raise
-            return (-1)
+            logging.error('Reading the photometer!: %s', msg)
+            return -1
         else:
-            print('Calibration info: ' + str(msg)),
+            logging.info('Calibration info: %s', msg)
             return (msg)
 
     def read_data(self, tries=1):
@@ -639,13 +637,10 @@ class SQMLE(SQM):
 
         # Check that msg contains data
         if read_err:
-            print('ERR. Reading the photometer!: %s' % str(msg))
-            if (DEBUG):
-                raise
+            logging.error('Reading the photometer!: %s', msg)
             return -1
         else:
-            if DEBUG:
-                print('Data msg: ' + str(msg))
+            logging.debug('Data msg: %s', msg[:-1])
             return msg
 
 
@@ -658,23 +653,23 @@ class SQMLU(SQM):
         super(SQMLU, self).__init__()
 
         try:
-            print('Trying fixed device address %s ... ' % str(config._device_addr))
+            logging.info('Trying fixed device address %s ... ', config._device_addr)
             self.addr = config._device_addr
             self.bauds = 115200
             self.start_connection()
         except:
-            print('Trying auto device address ...')
+            logging.info('Trying auto device address ...')
             self.addr = self.search()
-            print('Found address %s ... ' % str(self.addr))
+            logging.info('Found address %s ... ', self.addr)
             self.bauds = 115200
             self.start_connection()
 
         # Clearing buffer
-        print('Clearing buffer ... |'),
+        logging.info('Clearing buffer ... |')
         buffer_data = self.read_buffer()
-        print(buffer_data),
-        print('| ... DONE')
-        print('Reading test data (ix,cx,rx)...')
+        logging.info("%s", buffer_data)
+        logging.info('| ... DONE')
+        logging.info('Reading test data (ix,cx,rx)...')
         time.sleep(1)
         self.ix_readout = self.read_metadata(tries=10)
         time.sleep(1)
@@ -687,17 +682,17 @@ class SQMLU(SQM):
         Photometer search.
         Name of the port depends on the platform.
         '''
-        ports_unix = ['/dev/ttyUSB' + str(num) for num in range(100)]
-        ports_win = ['COM' + str(num) for num in range(100)]
+        ports_unix = ['/dev/ttyUSB%d' % num for num in range(100)]
+        ports_win = ['COM%d' % num for num in range(100)]
 
         os_in_use = sys.platform
 
         ports = []
         if os_in_use == 'linux2':
-            print('Detected Linux platform')
+            logging.info('Detected Linux platform')
             ports = ports_unix
         elif os_in_use == 'win32':
-            print('Detected Windows platform')
+            logging.info('Detected Windows platform')
             ports = ports_win
 
         used_port = None
@@ -709,7 +704,7 @@ class SQMLU(SQM):
                 break
 
         if used_port is None:
-            print('ERR. Device not found!')
+            logging.error('Device not found!')
             raise
         else:
             return used_port
@@ -770,12 +765,11 @@ class SQMLU(SQM):
 
         # Check that msg contains data
         if read_err:
-            print('ERR. Reading the photometer!: %s' % str(msg))
-            if (DEBUG):
-                raise
+            logging.error('Reading the photometer!: %s', msg[:-1])
+
             return -1
         else:
-            print('Sensor info: ' + str(msg)),
+            logging.info('Sensor info: %s', msg[:-1])
             return (msg)
 
     def read_calibration(self, tries=1):
@@ -801,13 +795,12 @@ class SQMLU(SQM):
             if (msg != -1): read_err = False
 
         # Check that msg contains data
-        if read_err == True:
-            print('ERR. Reading the photometer!: %s' % str(msg))
-            if (DEBUG):
-                raise
+        if read_err:
+            logging.error('Reading the photometer!: %s', msg[:-1])
+
             return -1
         else:
-            print('Calibration info: ' + str(msg)),
+            logging.info('Calibration info: %s', msg[:-1])
             return (msg)
 
     def read_data(self, tries=1):
@@ -834,12 +827,10 @@ class SQMLU(SQM):
             if (msg != -1): read_err = False
 
         # Check that msg contains data
-        if read_err == True:
-            print('ERR. Reading the photometer!: %s' % str(msg))
-            if (DEBUG):
-                raise
-            return (-1)
+        if read_err:
+            logging.error('Reading the photometer!: %s', msg[:-1])
+            return -1
         else:
-            if (DEBUG):
-                print('Data msg: ' + str(msg))
-            return (msg)
+            logging.debug('Data msg: %s', msg[:-1])
+
+            return msg

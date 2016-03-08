@@ -22,15 +22,16 @@
 
 import os
 import sys
+import logging
+from datetime import timedelta
 
-import matplotlib
 import numpy as np
-
+import matplotlib
 matplotlib.use('Agg')
 import matplotlib.ticker as ticker
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from datetime import timedelta
+
 
 from pysqm.common import *
 
@@ -287,7 +288,7 @@ class SQMData(object):
             self.Night = np.unique([(DT - datetime.timedelta(hours=12)).date()
                                     for DT in self.aftermidnight.localdates])[0]
         else:
-            print('Warning, No Night detected.')
+            logging.warn('No Night detected.')
             self.Night = None
 
     def data_statistics(self, Ephem):
@@ -320,9 +321,7 @@ class SQMData(object):
             self.astronomical_night_temp = \
                 np.array(self.all_night_temp)[astronomical_night_filter]
         else:
-            print(
-                'Warning, < 10 points in astronomical night, ' +
-                ' using the whole night data instead')
+            logging.warn('< 10 points in astronomical night, using the whole night data instead')
             self.astronomical_night_sb = self.all_night_sb
             self.astronomical_night_temp = self.all_night_temp
 
@@ -503,7 +502,7 @@ class Plot(object):
         '''
 
         if np.size(Data.Night) != 1:
-            print('Warning, more than 1 night in the data file. Please check it! %d' % np.size(Data.Night))
+            logging.warn('More than 1 night in the data file. Please check it! %d', np.size(Data.Night))
 
         # Mean datetime
         dts = Data.all_night_dt
@@ -619,7 +618,7 @@ class Plot(object):
             begin_plot_dt = end_plot_dt - datetime.timedelta(
                 hours=24 + config.limits_time[1] - config.limits_time[0])
         else:
-            print('Warning: Cannot calculate plot limits')
+            logging.warn('Cannot calculate plot limits')
             return None
 
         self.thegraph_time.set_xlim(begin_plot_dt, end_plot_dt)
@@ -685,7 +684,7 @@ def save_stats_to_file(Night, NSBData, Ephem):
         config.summary_data_directory + '/Statistics_' + \
         str(config._device_shorttype + '_' + config._observatory_name) + '.dat'
 
-    print('Writing statistics file')
+    logging.info('Writing statistics file')
 
     def safe_create_file(filename):
         if not os.path.exists(filename):
@@ -749,7 +748,7 @@ def make_plot(input_filename=None, send_emails=False, write_stats=False):
      - Create the plot
     '''
 
-    print('Ploting photometer data ...')
+    logging.info('Ploting photometer data ...')
 
     if (input_filename is None):
         input_filename = config.current_data_directory + \
@@ -787,7 +786,7 @@ def make_plot(input_filename=None, send_emails=False, write_stats=False):
     # Close figure
     NSBPlot.close_figure()
 
-    if send_emails == True:
+    if send_emails:
         import pysqm.email
         night_label = str(datetime.date.today() - timedelta(days=1))
         pysqm.email.send_emails(night_label=night_label, Stat=NSBData.Statistics)

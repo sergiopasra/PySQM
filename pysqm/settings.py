@@ -38,6 +38,15 @@ class ArgParser:
         args = self.parser.parse_args()
         vars(self).update(args.__dict__)
 
+    def get_config_filename(self):
+        if self.args.config is None:
+            configfilename = "config.py"
+        else:
+            configfilename = self.args.config
+
+        print("Using configuration file: %s." % configfilename)
+        return configfilename
+
     def print_help(self):
         self.parser.print_help()
 
@@ -54,7 +63,7 @@ class ConfigFile:
         self.path = path
         self.config = None
 
-    def read_config_file(self,path):
+    def read_config_file(self, path):
         # Get the absolute path
         abspath = os.path.abspath(path)
         # Is a dir? Then add config.py (default filename)
