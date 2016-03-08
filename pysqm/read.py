@@ -19,6 +19,7 @@
 # along with PySQM.  If not, see <http://www.gnu.org/licenses/>.
 # ____________________________
 
+from __future__ import print_function
 
 import logging
 import inspect
@@ -298,7 +299,7 @@ class device(observatory):
                 values[0] + "','" + values[1] + "'," + \
                 values[2] + "," + values[3] + "," + \
                 values[4] + "," + values[5] + ")")
-        except Exception, ex:
+        except Exception as ex:
             print(str(inspect.stack()[0][2:4][::-1]) +
                   ' DB Error. Exception: %s' % str(ex))
 
@@ -495,14 +496,13 @@ class SQMLE(SQM):
         buf = ''
         starttime = time.time()
 
-        print "Looking for replies; press Ctrl-C to stop."
+        print("Looking for replies; press Ctrl-C to stop.")
         addr = [None, None]
         while True:
             try:
                 (buf, addr) = self.s.recvfrom(30)
                 if buf[3].encode("hex") == "f7":
-                    print "Received from %s: MAC: %s" % \
-                          (addr, buf[24:30].encode("hex"))
+                    print("Received from %s: MAC: %s" % (addr, buf[24:30].encode("hex")))
             except:
                 # Timeout in seconds. Allow all devices time to respond
                 if time.time() - starttime > 3:

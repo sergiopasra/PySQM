@@ -27,7 +27,7 @@ while(True):
     # Loop forever to make sure the program does not die.
     try:
         main.loop()
-    except Exception, e:
+    except Exception as e:
         print('')
         print('FATAL ERROR while running the main loop !!')
         print('Error was:')
