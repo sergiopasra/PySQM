@@ -24,8 +24,9 @@ import datetime
 import math
 
 import ephem
-# Read the config variables from config.py
+
 import pysqm.settings as settings
+
 config = settings.GlobalConfig.config
 
 def define_ephem_observatory():
@@ -34,7 +35,7 @@ def define_ephem_observatory():
     OBS.lat = config._observatory_latitude*ephem.pi/180
     OBS.lon = config._observatory_longitude*ephem.pi/180
     OBS.elev = config._observatory_altitude
-    return(OBS)
+    return OBS
 
 def remove_linebreaks(data):
     # Remove line breaks from data

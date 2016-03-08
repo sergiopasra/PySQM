@@ -40,22 +40,6 @@ config = settings.GlobalConfig.config
 from pysqm.read import *
 import pysqm.plot
 
-
-# This import section is only for software build purposes.
-# Dont worry if some of these are missing in your setup.
-
-def relaxed_import(themodule):
-    try:
-        exec ('import ' + str(themodule))
-    except:
-        pass
-
-
-relaxed_import('socket')
-relaxed_import('serial')
-relaxed_import('_mysql')
-relaxed_import('pysqm.email')
-
 # Conditional imports
 
 # If the old format (SQM_LE/SQM_LU) is used, replace _ with -

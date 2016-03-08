@@ -27,6 +27,7 @@ import os
 import struct
 import sys
 import time
+import datetime
 
 import numpy as np
 
@@ -35,7 +36,7 @@ _cal_len_ = None
 _meta_len_ = None
 _data_len_ = None
 
-from pysqm.common import *
+import pysqm.common
 
 # This import section is only for software build purposes.
 # Dont worry if some of these are missing in your setup.
@@ -105,7 +106,7 @@ def filtered_mean(array, sigma=3):
     return (filtered_mean)
 
 
-class device(observatory):
+class device(pysqm.common.observatory):
 
     def __init__(self):
         # Get Photometer identification codes
@@ -117,7 +118,7 @@ class device(observatory):
 
     def standard_file_header(self):
         # Data Header, at the end of this script.
-        header_content = RAWHeaderContent
+        header_content = pysqm.common.RAWHeaderContent
 
         # Update data file header with observatory data
         header_content = header_content.replace(
@@ -157,11 +158,11 @@ class device(observatory):
             '$SERIAL_NUMBER', str(self.serial_number))
 
         header_content = header_content.replace(
-            '$IXREADOUT', remove_linebreaks(self.ix_readout))
+            '$IXREADOUT', pysqm.common.remove_linebreaks(self.ix_readout))
         header_content = header_content.replace(
-            '$RXREADOUT', remove_linebreaks(self.rx_readout))
+            '$RXREADOUT', pysqm.common.remove_linebreaks(self.rx_readout))
         header_content = header_content.replace(
-            '$CXREADOUT', remove_linebreaks(self.cx_readout))
+            '$CXREADOUT', pysqm.common.remove_linebreaks(self.cx_readout))
 
         return header_content
 
@@ -186,7 +187,7 @@ class device(observatory):
     def define_filenames(self):
         # Filenames should follow a standard based on observatory name and date.
         date_time_file = self.local_datetime(
-            self.read_datetime()) - datetime.timedelta(hours=12)
+            self.read_datetime()) - datetime.datetime.timedelta(hours=12)
         date_file = date_time_file.date()
         yearmonth = str(date_file)[0:7]
         yearmonthday = str(date_file)[0:10]
@@ -400,18 +401,18 @@ class SQM(device):
 
     def metadata_process(self, msg, sep=','):
         # Separate the output array in items
-        msg = format_value(msg)
+        msg = pysqm.common.format_value(msg)
         msg_array = msg.split(sep)
 
         # Get Photometer identification codes
-        self.protocol_number = int(format_value(msg_array[1]))
-        self.model_number = int(format_value(msg_array[2]))
-        self.feature_number = int(format_value(msg_array[3]))
-        self.serial_number = int(format_value(msg_array[4]))
+        self.protocol_number = int(pysqm.common.format_value(msg_array[1]))
+        self.model_number = int(pysqm.common.format_value(msg_array[2]))
+        self.feature_number = int(pysqm.common.format_value(msg_array[3]))
+        self.serial_number = int(pysqm.common.format_value(msg_array[4]))
 
     def data_process(self, msg, sep=','):
         # Separate the output array in items
-        msg = format_value(msg)
+        msg = pysqm.common.format_value(msg)
         msg_array = msg.split(sep)
 
         # Output definition characters
@@ -422,11 +423,11 @@ class SQM(device):
         temp_char = 'C'
 
         # Get the measures
-        sky_brightness = float(format_value(msg_array[1], mag_char))
-        freq_sensor = float(format_value(msg_array[2], freq_char))
-        ticks_uC = float(format_value(msg_array[3], perc_char))
-        period_sensor = float(format_value(msg_array[4], pers_char))
-        temp_sensor = float(format_value(msg_array[5], temp_char))
+        sky_brightness = float(pysqm.common.format_value(msg_array[1], mag_char))
+        freq_sensor = float(pysqm.common.format_value(msg_array[2], freq_char))
+        ticks_uC = float(pysqm.common.format_value(msg_array[3], perc_char))
+        period_sensor = float(pysqm.common.format_value(msg_array[4], pers_char))
+        temp_sensor = float(pysqm.common.format_value(msg_array[5], temp_char))
 
         # For low frequencies, use the period instead
         if freq_sensor < 30 and period_sensor > 0:
