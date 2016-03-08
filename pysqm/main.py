@@ -19,6 +19,9 @@
 # along with PySQM.  If not, see <http://www.gnu.org/licenses/>.
 # ____________________________
 
+import os
+import datetime
+import time
 import logging
 
 # Read input arguments (if any)
@@ -37,8 +40,9 @@ settings.GlobalConfig.read_config_file(configfilename)
 config = settings.GlobalConfig.config
 
 ### Load now the rest of the modules
-from pysqm.read import *
+import pysqm.read
 import pysqm.plot
+import pysqm.common
 
 # Conditional imports
 
@@ -61,9 +65,28 @@ for directory in [config.monthly_data_directory, config.daily_data_directory, co
 # and start the measures
 
 if config._device_type == 'SQM-LU':
-    mydevice = SQMLU()
+    try:
+        logging.info('Trying fixed device address %s ... ', config._device_addr)
+        mydevice = pysqm.read.SQMLU(addr=config._device_addr)
+    except StandardError:
+        logging.warn('Device not found in %s', config._device_addr)
+
+    logging.info('Trying auto device address ...')
+    autodev = pysqm.read.SQMLU.search(bauds=115200)
+    if autodev is None:
+        logging.error('Device not found!')
+        exit(0)
+
+    logging.info('Found address %s ... ', autodev)
+
+    try:
+        mydevice = pysqm.read.SQMLU(addr=autodev)
+    except StandardError:
+        logging.error('Device not found!')
+        exit(0)
+
 elif config._device_type == 'SQM-LE':
-    mydevice = SQMLE()
+    mydevice = pysqm.read.SQMLE()
 else:
     logging.error('Unknown device type %s', config._device_type)
     exit(0)
@@ -74,7 +97,7 @@ def loop():
     # Ephem is used to calculate moon position (if above horizon)
     # and to determine start-end times of the measures
     logging.basicConfig(level=logging.DEBUG)
-    observ = define_ephem_observatory()
+    observ = pysqm.common.define_ephem_observatory()
     niter = 0
     DaytimePrint = True
     logging.info('Starting readings ...')

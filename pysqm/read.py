@@ -28,50 +28,27 @@ import struct
 import sys
 import time
 import datetime
+import socket
+import serial
 
 import numpy as np
+
+import pysqm.common
+import pysqm.settings as settings
+
+config = settings.GlobalConfig.config
+
+# If the old format (SQM_LE/SQM_LU) is used, replace _ with -
+config._device_type = config._device_type.replace('_', '-')
+
+if config._use_mysql:
+    import _mysql
+
 
 # Default, to ignore the length of the read string.
 _cal_len_ = None
 _meta_len_ = None
 _data_len_ = None
-
-import pysqm.common
-
-# This import section is only for software build purposes.
-# Dont worry if some of these are missing in your setup.
-
-
-def relaxed_import(themodule):
-    try:
-        exec ('import ' + str(themodule))
-    except:
-        pass
-
-
-relaxed_import('serial')
-relaxed_import('_mysql')
-relaxed_import('pysqm.email')
-
-
-# Read configuration
-import pysqm.settings as settings
-
-config = settings.GlobalConfig.config
-
-DEBUG = getattr(config, 'DEBUG', False)
-
-# Conditional imports
-
-# If the old format (SQM_LE/SQM_LU) is used, replace _ with -
-config._device_type = config._device_type.replace('_', '-')
-
-if config._device_type == 'SQM-LE':
-    import socket
-elif config._device_type == 'SQM-LU':
-    import serial
-if config._use_mysql == True:
-    import _mysql
 
 
 def filtered_mean(array, sigma=3):
@@ -187,7 +164,7 @@ class device(pysqm.common.observatory):
     def define_filenames(self):
         # Filenames should follow a standard based on observatory name and date.
         date_time_file = self.local_datetime(
-            self.read_datetime()) - datetime.datetime.timedelta(hours=12)
+            self.read_datetime()) - datetime.timedelta(hours=12)
         date_file = date_time_file.date()
         yearmonth = str(date_file)[0:7]
         yearmonthday = str(date_file)[0:10]
@@ -213,13 +190,11 @@ class device(pysqm.common.observatory):
         '''
         for each_file in [self.monthly_datafile, self.daily_datafile]:
             if not os.path.exists(each_file):
-                datafile = open(each_file, 'w')
-                datafile.write(self.standard_file_header())
-                datafile.close()
+                with open(each_file, 'w') as datafile:
+                    datafile.write(self.standard_file_header())
 
-            datafile = open(each_file, 'a+')
-            datafile.write(formatted_data)
-            datafile.close()
+            with open(each_file, 'a+') as datafile:
+                datafile.write(formatted_data)
 
         self.copy_file(self.daily_datafile, self.current_datafile)
 
@@ -258,9 +233,8 @@ class device(pysqm.common.observatory):
         # Send the new file initialization to the datacenter
         # Appends the header to the buffer (it will be sent later)
 
-        if (formatted_data == "NEWFILE"):
-            self.DataBuffer = [ \
-                hl + "\n" for hl in self.standard_file_header().split("\n")[:-1]]
+        if formatted_data == "NEWFILE":
+            self.DataBuffer = [hl + "\n" for hl in self.standard_file_header().split("\n")[:-1]]
 
             # Try to connect with the datacenter and send the header
             success = send_data(DEV_ID + ";;C;;")
@@ -346,6 +320,13 @@ class device(pysqm.common.observatory):
 
 
 class SQM(device):
+
+    def read_data(self, tries=1):
+        raise NotImplemented
+
+    def pass_command(self, cmd):
+        raise NotImplemented
+
     def read_photometer(self, Nmeasures=1, PauseMeasures=2):
         # Initialize values
         temp_sensor = []
@@ -436,40 +417,131 @@ class SQM(device):
         return (temp_sensor, freq_sensor, ticks_uC, sky_brightness)
 
     def start_connection(self):
-        ''' Start photometer connection '''
-        pass
+        """Start photometer connection"""
+        raise NotImplemented
 
     def close_connection(self):
-        ''' End photometer connection '''
-        pass
+        """End photometer connection"""
+        raise NotImplemented
 
     def reset_device(self):
-        ''' Restart connection'''
+        """Restart connection"""
         self.close_connection()
-        time.sleep(0.1)
-        # self.__init__()
         self.start_connection()
+
+    def read_buffer(self):
+        raise NotImplemented
+
+    def read_metadata(self, tries=1):
+        """Read the serial number, firmware version."""
+        self.pass_command('ix')
+        time.sleep(1)
+
+        read_err = False
+        msg = self.read_buffer()
+
+        # Check metadata
+        if (len(msg) == _meta_len_ or _meta_len_ is None) and ("i," in msg):
+            self.metadata_process(msg)
+        else:
+            tries -= 1
+            read_err = True
+
+        if read_err and tries > 0:
+            time.sleep(1)
+            self.reset_device()
+            time.sleep(1)
+            msg = self.read_metadata(tries)
+            if (msg != -1): read_err = False
+
+        # Check that msg contains data
+        if read_err:
+            logging.error('Reading the photometer!: %s', msg[:-1])
+            return -1
+        else:
+            logging.info('Sensor info: %s', msg[:-1])
+            return msg
+
+    def read_calibration(self, tries=1):
+        ''' Read the calibration parameters '''
+        self.pass_command('cx')
+        time.sleep(1)
+
+        read_err = False
+        msg = self.read_buffer()
+
+        # Check caldata
+        if (len(msg) == _cal_len_ or _cal_len_ is None) and ("c," in msg):
+            pass
+        else:
+            tries -= 1
+            read_err = True
+
+        if read_err and tries > 0:
+            time.sleep(1)
+            self.reset_device()
+            time.sleep(1)
+            msg = self.read_calibration(tries)
+            if (msg != -1):
+                read_err = False
+
+        # Check that msg contains data
+        if read_err == True:
+            logging.error('Reading the photometer!: %s', msg[:-1])
+            return -1
+        else:
+            logging.info('Calibration info: %s', msg[:-1])
+            return (msg)
+
+    def read_data(self, tries=1):
+        """Read the SQM and format the Temperature, Frequency and NSB measures"""
+        self.pass_command('rx')
+        time.sleep(1)
+
+        read_err = False
+        msg = self.read_buffer()
+
+        # Check data
+        if (len(msg) == _data_len_ or _data_len_ is None) and ("r," in msg):
+            # Sanity check
+            self.data_process(msg)
+        else:
+            tries -= 1
+            read_err = True
+
+        if read_err and tries > 0:
+            time.sleep(1)
+            self.reset_device()
+            time.sleep(1)
+            msg = self.read_data(tries)
+            if (msg != -1):
+                read_err = False
+
+        # Check that msg contains data
+        if read_err:
+            logging.error('Reading the photometer!: %s', msg[:-1])
+            return -1
+        else:
+            logging.debug('Data msg: %s', msg[:-1])
+
+            return msg
 
 
 class SQMLE(SQM):
     def __init__(self):
-        '''
-        Search the photometer in the network and
-        read its metadata
-        '''
+        """Search the photometer in the network and read its metadata"""
 
         super(SQMLE, self).__init__()
+        self.port = 10001
 
         try:
             logging.info('Trying fixed device address %s ... ', config._device_addr)
             self.addr = config._device_addr
-            self.port = 10001
             self.start_connection()
         except:
             print('Trying auto device address ...')
             self.addr = self.search()
             print('Found address %s ... ' % str(self.addr))
-            self.port = 10001
             self.start_connection()
 
         # Clearing buffer
@@ -486,7 +558,7 @@ class SQMLE(SQM):
         self.rx_readout = self.read_data(tries=10)
 
     def search(self):
-        ''' Search SQM LE in the LAN. Return its adress '''
+        """Search SQM LE in the LAN. Return its adress"""
         self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.s.setblocking(False)
 
@@ -516,6 +588,9 @@ class SQMLE(SQM):
         else:
             return addr[0]
 
+    def pass_command(self, cmd):
+        self.s.send(cmd)
+
     def start_connection(self):
         """Start photometer connection."""
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -524,7 +599,7 @@ class SQMLE(SQM):
         # self.s.settimeout(1)
 
     def close_connection(self):
-        ''' End photometer connection '''
+        """End photometer connection"""
         self.s.setsockopt(
             socket.SOL_SOCKET,
             socket.SO_LINGER,
@@ -539,131 +614,24 @@ class SQMLE(SQM):
         self.s.close()
 
     def read_buffer(self):
-        ''' Read the data '''
+        """Read the data"""
         msg = None
         try:
             msg = self.s.recv(256)
         except:
             pass
-        return (msg)
-
-    def reset_device(self):
-        ''' Connection reset '''
-        # print('Trying to reset connection')
-        self.close_connection()
-        self.start_connection()
-
-    def read_metadata(self, tries=1):
-        """Read the serial number, firmware version."""
-        self.s.send('ix')
-        time.sleep(1)
-
-        read_err = False
-        msg = self.read_buffer()
-
-        # Check metadata
-        if (len(msg) == _meta_len_ or _meta_len_ == None) and ("i," in msg):
-            self.metadata_process(msg)
-        else:
-            tries -= 1
-            read_err = True
-
-        if (read_err == True and tries > 0):
-            time.sleep(1)
-            self.reset_device()
-            time.sleep(1)
-            msg = self.read_metadata(tries)
-            if (msg != -1): read_err = False
-
-        # Check that msg contains data
-        if read_err:
-            logging.error('Reading the photometer!: %s', msg)
-            return -1
-        else:
-            logging.info('Sensor info: %s', msg)
-            return msg
-
-    def read_calibration(self, tries=1):
-        ''' Read the calibration parameters '''
-        self.s.send('cx')
-        time.sleep(1)
-
-        read_err = False
-        msg = self.read_buffer()
-
-        # Check caldata
-        if (len(msg) == _cal_len_ or _cal_len_ == None) and ("c," in msg):
-            pass
-        else:
-            tries -= 1
-            read_err = True
-
-        if (read_err == True and tries > 0):
-            time.sleep(1)
-            self.reset_device()
-            time.sleep(1)
-            msg = self.read_calibration(tries)
-            if (msg != -1): read_err = False
-
-        # Check that msg contains data
-        if read_err == True:
-            logging.error('Reading the photometer!: %s', msg)
-            return -1
-        else:
-            logging.info('Calibration info: %s', msg)
-            return (msg)
-
-    def read_data(self, tries=1):
-        ''' Read the SQM and format the Temperature, Frequency and NSB measures '''
-        self.s.send('rx')
-        time.sleep(1)
-
-        read_err = False
-        msg = self.read_buffer()
-
-        # Check data
-        if (len(msg) == _data_len_ or _data_len_ == None) and ("r," in msg):
-            self.data_process(msg)
-        else:
-            tries -= 1
-            read_err = True
-
-        if (read_err == True and tries > 0):
-            time.sleep(1)
-            self.reset_device()
-            time.sleep(1)
-            msg = self.read_data(tries)
-            if (msg != -1):
-                read_err = False
-
-        # Check that msg contains data
-        if read_err:
-            logging.error('Reading the photometer!: %s', msg)
-            return -1
-        else:
-            logging.debug('Data msg: %s', msg[:-1])
-            return msg
+        return msg
 
 
 class SQMLU(SQM):
-    def __init__(self):
-        '''
-        Search the photometer and
-        read its metadata
-        '''
+    def __init__(self, addr, bauds=115200):
+        """Search the photometer and read its metadata"""
+
         super(SQMLU, self).__init__()
 
-        try:
-            logging.info('Trying fixed device address %s ... ', config._device_addr)
-            self.addr = config._device_addr
-            self.bauds = 115200
-            self.start_connection()
-        except:
-            logging.info('Trying auto device address ...')
-            self.addr = self.search()
-            logging.info('Found address %s ... ', self.addr)
-            self.bauds = 115200
-            self.start_connection()
+        self.bauds = bauds
+        self.addr = addr
+        self.serial = self.init_connection(self.addr, self.bauds)
 
         # Clearing buffer
         logging.info('Clearing buffer ... |')
@@ -678,11 +646,12 @@ class SQMLU(SQM):
         time.sleep(1)
         self.rx_readout = self.read_data(tries=10)
 
-    def search(self):
-        '''
-        Photometer search.
-        Name of the port depends on the platform.
-        '''
+    @staticmethod
+    def search(bauds=115200):
+        """Serial photometer search."""
+
+        # Name of the port depends on the platform.
+
         ports_unix = ['/dev/ttyUSB%d' % num for num in range(100)]
         ports_win = ['COM%d' % num for num in range(100)]
 
@@ -698,7 +667,7 @@ class SQMLU(SQM):
 
         used_port = None
         for port in ports:
-            conn_test = serial.Serial(port, 115200, timeout=1)
+            conn_test = serial.Serial(port, bauds, timeout=1)
             conn_test.write('ix')
             if conn_test.readline()[0] == 'i':
                 used_port = port
@@ -710,10 +679,15 @@ class SQMLU(SQM):
         else:
             return used_port
 
-    def start_connection(self):
-        '''Start photometer connection '''
+    @staticmethod
+    def init_connection(addr, bauds):
+        """Start serial photometer connection"""
+        return serial.Serial(addr, bauds, timeout=2)
 
-        self.s = serial.Serial(self.addr, 115200, timeout=2)
+    def start_connection(self):
+        """Start photometer connection"""
+
+        self.serial = self.init_connection(self.addr, self.bauds)
 
     def close_connection(self):
         ''' End photometer connection '''
@@ -724,114 +698,16 @@ class SQMLU(SQM):
             r = self.read_buffer()
             request += str(r)
 
-        self.s.close()
-
-    def reset_device(self):
-        ''' Connection reset '''
-        # print('Trying to reset connection')
-        self.close_connection()
-        self.start_connection()
+        self.serial.close()
 
     def read_buffer(self):
         ''' Read the data '''
         msg = None
         try:
-            msg = self.s.readline()
+            msg = self.serial.readline()
         except:
             pass
-        return (msg)
+        return msg
 
-    def read_metadata(self, tries=1):
-        """Read the serial number, firmware version"""
-        self.s.write('ix')
-        time.sleep(1)
-
-        read_err = False
-        msg = self.read_buffer()
-
-        # Check metadata
-        if (len(msg) == _meta_len_ or _meta_len_ == None) and ("i," in msg):
-            self.metadata_process(msg)
-        else:
-            tries -= 1
-            read_err = True
-
-        if (read_err == True and tries > 0):
-            time.sleep(1)
-            self.reset_device()
-            time.sleep(1)
-            msg = self.read_metadata(tries)
-            if (msg != -1):
-                read_err = False
-
-        # Check that msg contains data
-        if read_err:
-            logging.error('Reading the photometer!: %s', msg[:-1])
-
-            return -1
-        else:
-            logging.info('Sensor info: %s', msg[:-1])
-            return (msg)
-
-    def read_calibration(self, tries=1):
-        ''' Read the calibration data '''
-        self.s.write('cx')
-        time.sleep(1)
-
-        read_err = False
-        msg = self.read_buffer()
-
-        # Check caldata
-        if (len(msg) == _cal_len_ or _cal_len_ == None) and ("c," in msg):
-            pass
-        else:
-            tries -= 1
-            read_err = True
-
-        if (read_err == True and tries > 0):
-            time.sleep(1)
-            self.reset_device()
-            time.sleep(1)
-            msg = self.read_calibration(tries)
-            if (msg != -1): read_err = False
-
-        # Check that msg contains data
-        if read_err:
-            logging.error('Reading the photometer!: %s', msg[:-1])
-
-            return -1
-        else:
-            logging.info('Calibration info: %s', msg[:-1])
-            return (msg)
-
-    def read_data(self, tries=1):
-        ''' Read the SQM and format the Temperature, Frequency and NSB measures '''
-        self.s.write('rx')
-        time.sleep(1)
-
-        read_err = False
-        msg = self.read_buffer()
-
-        # Check data
-        if (len(msg) == _data_len_ or _data_len_ == None) and ("r," in msg):
-            # Sanity check
-            self.data_process(msg)
-        else:
-            tries -= 1
-            read_err = True
-
-        if (read_err == True and tries > 0):
-            time.sleep(1)
-            self.reset_device()
-            time.sleep(1)
-            msg = self.read_data(tries)
-            if (msg != -1): read_err = False
-
-        # Check that msg contains data
-        if read_err:
-            logging.error('Reading the photometer!: %s', msg[:-1])
-            return -1
-        else:
-            logging.debug('Data msg: %s', msg[:-1])
-
-            return msg
+    def pass_command(self, cmd):
+        self.serial.write(cmd)

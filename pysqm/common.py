@@ -57,12 +57,12 @@ def format_value_list(data,remove_str=' '):
     return(data)
 
 def set_decimals(number,dec=3):
-        str_number = str(number)
-        int_,dec_ = str_number.split('.')
-        while len(dec_)<=dec:
-            dec_=dec_+'0'
+    str_number = str(number)
+    int_,dec_ = str_number.split('.')
+    while len(dec_) <= dec:
+        dec_ = dec_ + '0'
 
-        return(int_+'.'+dec_[:dec])
+    return int_+'.'+dec_[:dec]
 
 class observatory(object):
     def read_datetime(self):
@@ -98,7 +98,6 @@ class observatory(object):
             return False
         else:
             return True
-
 
 
 RAWHeaderContent = '''# Definition of the community standard for skyglow observations 1.0
