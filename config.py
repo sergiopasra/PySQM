@@ -47,7 +47,7 @@ _observatory_horizon   = 10
 # Device (short)name for filenames
 _device_shorttype = 'SQM'
 # Device type. SQM_LE / SQM_LU
-_device_type = 'SQM_LE'
+_device_type = 'SQM_LU'
 # Long Device name. Should include the name of the observatory.
 _device_id = _device_type + '-' + _observatory_name
 # Device location in the world
@@ -56,7 +56,8 @@ _device_locationname = 'Locality/State/Country - Observatory Name'
 _data_supplier = 'Supplier Name / Institution'
 # Default Adress of the device
 # Can be either an IP Adress (p.e. 169.254.1.13) in SQM-LE or a COM port (p.e. COM13) in SQM-LU
-_device_addr = '169.254.1.13'
+#_device_addr = '169.254.1.13'
+_device_addr = '/dev/ttyUSB0'
 # Take the mean of N measures to remove jitter
 _measures_to_promediate = 5
 # Delay between two measures. In seconds.
@@ -96,7 +97,7 @@ System PATHs to save the data and plots
 '''
 
 # Monthly (permanent) data
-monthly_data_directory = "/Path/To/SQM/Data"
+monthly_data_directory = "sqmdata"
 # Daily (permanent) data
 daily_data_directory   = monthly_data_directory+"/daily_data/"
 # Daily (permanent) graph
