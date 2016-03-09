@@ -43,6 +43,7 @@ import pysqm.observatory as obs
 class Ephemerids(object):
     def __init__(self, config):
         self.Observatory = obs.define_ephem_observatory(config)
+        self.tz = config._local_timezone
 
     def ephem_date_to_datetime(self, ephem_date):
         # Convert ephem dates to datetime
@@ -60,9 +61,9 @@ class Ephemerids(object):
             newdate.year,
             newdate.month,
             newdate.day, 0, 0, 0)
-        newdatetime = newdatetime - datetime.timedelta(hours=config._local_timezone)
+        newdatetime = newdatetime - datetime.timedelta(hours=self.tz)
 
-        return (newdatetime)
+        return newdatetime
 
     def calculate_moon_ephems(self, thedate):
         # Moon ephemerids
@@ -136,7 +137,7 @@ class SQMData(object):
     class Statistics(object):
         pass
 
-    def __init__(self, filename, Ephem):
+    def __init__(self, filename, Ephem, config):
         self.all_night_sb = []
         self.all_night_dt = []
         self.all_night_temp = []
@@ -149,7 +150,7 @@ class SQMData(object):
             setattr(self.aftermidnight, variable, [])
 
         self.load_rawdata(filename)
-        self.process_rawdata(Ephem)
+        self.process_rawdata(Ephem, tz=config._local_timezone)
         self.check_number_of_nights()
 
     def extract_metadata(self, raw_data_and_metadata):
@@ -169,14 +170,13 @@ class SQMData(object):
         '''
         Open the file, read the data and close the file
         '''
-        sqm_file = open(filename, 'r')
-        raw_data_and_metadata = sqm_file.readlines()
-        self.metadata = self.extract_metadata(raw_data_and_metadata)
+        with open(filename, 'r') as sqm_file:
+            raw_data_and_metadata = sqm_file.readlines()
+            self.metadata = self.extract_metadata(raw_data_and_metadata)
 
-        self.raw_data = [ \
-            line for line in raw_data_and_metadata \
-            if self.check_validdata(line) == True]
-        sqm_file.close()
+            self.raw_data = [ \
+                line for line in raw_data_and_metadata \
+                if self.check_validdata(line) == True]
 
     def process_datetimes(self, str_datetime):
         '''
@@ -202,9 +202,9 @@ class SQMData(object):
             except ValueError:
                 second = 0
 
-        return (datetime.datetime(year, month, day, hour, minute, second))
+        return datetime.datetime(year, month, day, hour, minute, second)
 
-    def process_rawdata(self, Ephem):
+    def process_rawdata(self, Ephem, tz):
         '''
         Get the important information from the raw_data
         and put it in a more useful format
@@ -217,7 +217,7 @@ class SQMData(object):
             localdatetime = self.process_datetimes(line[1])
 
             # Check that datetimes are corrent
-            calc_localdatetime = utcdatetime + timedelta(hours=config._local_timezone)
+            calc_localdatetime = utcdatetime + timedelta(hours=tz)
             # assert (calc_localdatetime == localdatetime)
 
             # Set the datetime for astronomical calculations.
@@ -321,48 +321,48 @@ class SQMData(object):
             self.astronomical_night_sb = self.all_night_sb
             self.astronomical_night_temp = self.all_night_temp
 
-        Stat = self.Statistics
+        stat = self.Statistics
         # with self.Statistics as Stat:
         # Complete list
-        Stat.mean = np.mean(self.astronomical_night_sb)
-        Stat.median = np.median(self.astronomical_night_sb)
-        Stat.std = np.median(self.astronomical_night_sb)
-        Stat.number = np.size(self.astronomical_night_sb)
+        stat.mean = np.mean(self.astronomical_night_sb)
+        stat.median = np.median(self.astronomical_night_sb)
+        stat.std = np.median(self.astronomical_night_sb)
+        stat.number = np.size(self.astronomical_night_sb)
         # Only the best 1/100th.
-        Stat.bests_number = int(1 + Stat.number / 50.)
-        Stat.bests_mean = np.mean(select_bests(self.astronomical_night_sb, Stat.bests_number))
-        Stat.bests_median = np.median(select_bests(self.astronomical_night_sb, Stat.bests_number))
-        Stat.bests_std = np.std(select_bests(self.astronomical_night_sb, Stat.bests_number))
-        Stat.bests_err = Stat.bests_std * 1. / np.sqrt(Stat.bests_number)
+        stat.bests_number = int(1 + stat.number / 50.)
+        stat.bests_mean = np.mean(select_bests(self.astronomical_night_sb, stat.bests_number))
+        stat.bests_median = np.median(select_bests(self.astronomical_night_sb, stat.bests_number))
+        stat.bests_std = np.std(select_bests(self.astronomical_night_sb, stat.bests_number))
+        stat.bests_err = stat.bests_std * 1. / np.sqrt(stat.bests_number)
 
-        Stat.model_nterm = Stat.bests_number
-        data_smooth = fourier_filter(self.astronomical_night_sb, nterms=Stat.model_nterm)
+        stat.model_nterm = stat.bests_number
+        data_smooth = fourier_filter(self.astronomical_night_sb, nterms=stat.model_nterm)
         data_residuals = self.astronomical_night_sb - data_smooth
-        Stat.data_model_abs_meandiff = np.mean(np.abs(data_residuals))
+        stat.data_model_abs_meandiff = np.mean(np.abs(data_residuals))
 
         # Other interesting data
-        Stat.min_temperature = np.min(self.astronomical_night_temp)
-        Stat.max_temperature = np.max(self.astronomical_night_temp)
+        stat.min_temperature = np.min(self.astronomical_night_temp)
+        stat.max_temperature = np.max(self.astronomical_night_temp)
 
 
 class Plot(object):
-    def __init__(self, Data, Ephem):
+    def __init__(self, Data, Ephem, config):
         plt.hold(True)
         Data = self.prepare_plot(Data, Ephem)
 
         if config.full_plot:
-            self.make_figure(thegraph_altsun=True, thegraph_time=True)
-            self.plot_data_sunalt(Data, Ephem)
+            self.make_figure(config, thegraph_altsun=True, thegraph_time=True)
+            self.plot_data_sunalt(Data, Ephem, config=config)
         else:
-            self.make_figure(thegraph_altsun=False, thegraph_time=True)
+            self.make_figure(config, thegraph_altsun=False, thegraph_time=True)
 
-        self.plot_data_time(Data, Ephem)
+        self.plot_data_time(Data, Ephem, config=config)
 
-        self.plot_moonphase(Ephem)
-        self.plot_twilight(Ephem)
+        self.plot_moonphase(Ephem, tz=config._local_timezone)
+        self.plot_twilight(Ephem, tz=config._local_timezone)
         plt.hold(False)
 
-    def plot_moonphase(self, Ephem):
+    def plot_moonphase(self, Ephem, tz):
         '''
         shade the period of time for which the moon is above the horizon
         '''
@@ -370,31 +370,31 @@ class Plot(object):
             # We need to divide the plotting in two phases
             # (pre-midnight and after-midnight)
             self.thegraph_time.axvspan(
-                Ephem.moon_prev_rise + datetime.timedelta(hours=config._local_timezone),
-                Ephem.moon_next_set + datetime.timedelta(hours=config._local_timezone),
+                Ephem.moon_prev_rise + datetime.timedelta(hours=tz),
+                Ephem.moon_next_set + datetime.timedelta(hours=tz),
                 edgecolor='r', facecolor='r', alpha=0.1, clip_on=True)
         else:
             self.thegraph_time.axvspan(
-                Ephem.moon_prev_rise + datetime.timedelta(hours=config._local_timezone),
-                Ephem.moon_prev_set + datetime.timedelta(hours=config._local_timezone),
+                Ephem.moon_prev_rise + datetime.timedelta(hours=tz),
+                Ephem.moon_prev_set + datetime.timedelta(hours=tz),
                 edgecolor='r', facecolor='r', alpha=0.1, clip_on=True)
             self.thegraph_time.axvspan(
-                Ephem.moon_next_rise + datetime.timedelta(hours=config._local_timezone),
-                Ephem.moon_next_set + datetime.timedelta(hours=config._local_timezone),
+                Ephem.moon_next_rise + datetime.timedelta(hours=tz),
+                Ephem.moon_next_set + datetime.timedelta(hours=tz),
                 edgecolor='r', facecolor='r', alpha=0.1, clip_on=True)
 
-    def plot_twilight(self, Ephem):
+    def plot_twilight(self, Ephem, tz):
         '''
         Plot vertical lines on the astronomical twilights
         '''
         self.thegraph_time.axvline(
-            Ephem.twilight_prev_set + datetime.timedelta(hours=config._local_timezone),
+            Ephem.twilight_prev_set + datetime.timedelta(hours=tz),
             color='k', ls='--', lw=2, alpha=0.5, clip_on=True)
         self.thegraph_time.axvline(
-            Ephem.twilight_next_rise + datetime.timedelta(hours=config._local_timezone),
+            Ephem.twilight_next_rise + datetime.timedelta(hours=tz),
             color='k', ls='--', lw=2, alpha=0.5, clip_on=True)
 
-    def make_subplot_sunalt(self, twinplot=0):
+    def make_subplot_sunalt(self, config, twinplot=0):
         '''
         Make a subplot.
         If twinplot = 0, then this will be the only plot in the figure
@@ -406,9 +406,8 @@ class Plot(object):
         else:
             self.thegraph_sunalt = self.thefigure.add_subplot(2, 1, twinplot)
 
-        self.thegraph_sunalt.set_title(
-            'Sky Brightness (' + config._device_shorttype + '-' +
-            config._observatory_name + ')\n', fontsize='x-large')
+        title = 'Sky Brightness (%s-%s)\n' % (config._device_shorttype, config._observatory_name)
+        self.thegraph_sunalt.set_title(title, fontsize='x-large')
         self.thegraph_sunalt.set_xlabel('Solar altitude (deg)', fontsize='large')
         self.thegraph_sunalt.set_ylabel('Sky Brightness (mag/arcsec2)', fontsize='medium')
 
@@ -428,7 +427,7 @@ class Plot(object):
         self.thegraph_sunalt.grid(True, which='major')
         self.thegraph_sunalt.grid(True, which='minor')
 
-    def make_subplot_time(self, twinplot=0):
+    def make_subplot_time(self, config, twinplot=0):
         '''
         Make a subplot.
         If twinplot = 0, then this will be the only plot in the figure
@@ -441,15 +440,16 @@ class Plot(object):
             self.thegraph_time = self.thefigure.add_subplot(2, 1, twinplot)
 
         if config._local_timezone < 0:
-            UTC_offset_label = '-' + str(abs(config._local_timezone))
+            UTC_offset_label = '-%s' % abs(config._local_timezone)
         elif config._local_timezone > 0:
-            UTC_offset_label = '+' + str(abs(config._local_timezone))
+            UTC_offset_label = '+%s' % abs(config._local_timezone)
         else:
             UTC_offset_label = ''
 
         # self.thegraph_time.set_title('Sky Brightness (SQM-'+config._observatory_name+')',\
         # fontsize='x-large')
-        self.thegraph_time.set_xlabel('Time (UTC' + UTC_offset_label + ')', fontsize='large')
+        xlabel = 'Time (UTC%s)' %  UTC_offset_label
+        self.thegraph_time.set_xlabel(xlabel, fontsize='large')
         self.thegraph_time.set_ylabel('Sky Brightness (mag/arcsec2)', fontsize='medium')
 
         # Auxiliary plot (Temperature)
@@ -474,18 +474,18 @@ class Plot(object):
         self.thegraph_time.grid(True, which='major', ls='')
         self.thegraph_time.grid(True, which='minor')
 
-    def make_figure(self, thegraph_altsun=True, thegraph_time=True):
+    def make_figure(self, config, thegraph_altsun=True, thegraph_time=True):
         # Make the figure and the graph
         if thegraph_time == False:
             self.thefigure = plt.figure(figsize=(7, 3.))
-            self.make_subplot_sunalt(twinplot=0)
+            self.make_subplot_sunalt(config, twinplot=0)
         elif thegraph_altsun == False:
             self.thefigure = plt.figure(figsize=(7, 3.))
-            self.make_subplot_time(twinplot=0)
+            self.make_subplot_time(config, twinplot=0)
         else:
             self.thefigure = plt.figure(figsize=(7, 6.))
-            self.make_subplot_sunalt(twinplot=1)
-            self.make_subplot_time(twinplot=2)
+            self.make_subplot_sunalt(config, twinplot=1)
+            self.make_subplot_time(config, twinplot=2)
 
         # Adjust the space between plots
         plt.subplots_adjust(hspace=0.35)
@@ -515,7 +515,7 @@ class Plot(object):
 
         return Data
 
-    def plot_data_sunalt(self, Data, Ephem):
+    def plot_data_sunalt(self, Data, Ephem, config):
         '''
         Plot NSB data vs Sun altitude
         '''
@@ -566,7 +566,7 @@ class Plot(object):
         #      color='r',fontsize='small',fontname='monospace',\
         #      transform = self.thegraph_sunalt.transAxes)
 
-    def plot_data_time(self, Data, Ephem):
+    def plot_data_time(self, Data, Ephem, config):
         '''
         Plot NSB data vs Sun altitude
         '''
@@ -649,7 +649,7 @@ class Plot(object):
         plt.close('all')
 
 
-def save_stats_to_file(Night, NSBData, Ephem):
+def save_stats_to_file(Night, NSBData, Ephem, config):
     '''
     Save statistics to file
     '''
@@ -683,40 +683,20 @@ def save_stats_to_file(Night, NSBData, Ephem):
         set_decimals(Stat.max_temperature, 1) + \
         '\n'
 
-    statistics_filename = \
-        config.summary_data_directory + '/Statistics_' + \
-        str(config._device_shorttype + '_' + config._observatory_name) + '.dat'
+    sfname = 'Statistics_%s_%s.dat' % (config._device_shorttype, config._observatory_name)
 
-    logger.info('Writing statistics file')
+    statistics_filename = os.path.join(config.summary_data_directory, sfname)
 
-    def safe_create_file(filename):
-        if not os.path.exists(filename):
-            open(filename, 'w').close()
+    logger.info('Writing statistics file %s', statistics_filename)
 
-    def read_file(filename):
-        thefile = open(filename, 'r')
-        content = thefile.read()
-        thefile.close()
-        return (content)
-
-    def write_file(filename, content):
-        thefile = open(filename, 'w')
-        thefile.write(content)
-        thefile.close()
-
-    def append_file(filename, content):
-        thefile = open(filename, 'a')
-        thefile.write(content)
-        thefile.close()
-
-    # Create file if not exists
-    safe_create_file(statistics_filename)
+    if not os.path.exists(statistics_filename):
+        open(statistics_filename, 'w').close()
 
     # Read the content
-    stat_file_content = read_file(statistics_filename)
+    with open(statistics_filename, 'r') as thefile:
+        stat_file_content = thefile.read()
 
     # If the file doesnt have a proper header, add it to the beginning
-
     def valid_line(line):
         if '#' in line:
             return False
@@ -729,19 +709,23 @@ def save_stats_to_file(Night, NSBData, Ephem):
         stat_file_content = [line for line in stat_file_content.split('\n') if valid_line(line)]
         stat_file_content = '\n'.join(stat_file_content)
         stat_file_content = Header + stat_file_content
-        write_file(statistics_filename, stat_file_content)
+        with open(statistics_filename, 'w') as thefile:
+            thefile.write(stat_file_content)
 
     # Remove any previous statistic for the given Night in the file
     if str(Night) in stat_file_content:
         stat_file_content = [line for line in stat_file_content.split('\n') if str(Night) not in line]
         stat_file_content = '\n'.join(stat_file_content)
-        write_file(statistics_filename, stat_file_content)
+
+        with open(statistics_filename, 'w') as thefile:
+            thefile.write(stat_file_content)
 
     # Append to the end of the file
-    append_file(statistics_filename, formatted_data)
+    with open(statistics_filename, 'a') as thefile:
+        thefile.write(formatted_data)
 
 
-def make_plot(input_filename=None, send_emails=False, write_stats=False):
+def make_plot(config, input_filename=None, send_emails=False, write_stats=False):
     '''
     Main function (allows to execute the program
     from within python.
@@ -754,35 +738,36 @@ def make_plot(input_filename=None, send_emails=False, write_stats=False):
 
     logger.info('Ploting photometer data ...')
 
-    if (input_filename is None):
-        input_filename = config.current_data_directory + \
-                         '/' + config._device_shorttype + '_' + config._observatory_name + '.dat'
+    if input_filename is None:
+        fname = "%s_%s.dat" % (config._device_shorttype, config._observatory_name)
+        input_filename = os.path.join(config.current_data_directory, fname)
 
     # Define the observatory in ephem
     Ephem = Ephemerids(config)
 
     # Get and process the data from input_filename
-    NSBData = SQMData(input_filename, Ephem)
+    nsbdata = SQMData(input_filename, Ephem, config=config)
 
     # Moon and twilight ephemerids.
-    Ephem.calculate_moon_ephems(thedate=NSBData.Night)
-    Ephem.calculate_twilight(thedate=NSBData.Night)
+    Ephem.calculate_moon_ephems(thedate=nsbdata.Night)
+    Ephem.calculate_twilight(thedate=nsbdata.Night)
 
     # Calculate data statistics
-    NSBData.data_statistics(Ephem)
+    nsbdata.data_statistics(Ephem)
 
     # Write statiscs to file?
     if write_stats == True:
-        save_stats_to_file(NSBData.Night, NSBData, Ephem)
+        save_stats_to_file(nsbdata.Night, nsbdata, Ephem, config=config)
 
     # Plot the data and save the resulting figure
-    NSBPlot = Plot(NSBData, Ephem)
-
-    output_filenames = [
-        str("%s/%s_%s.png" % (config.current_data_directory, config._device_shorttype, config._observatory_name)),
-        str("%s/%s_120000_%s-%s.png" % (config.daily_graph_directory, str(NSBData.Night).replace('-', ''),
-               config._device_shorttype, config._observatory_name))
-        ]
+    NSBPlot = Plot(nsbdata, Ephem, config=config)
+    f10 = "%s_%s.png" % (config._device_shorttype, config._observatory_name)
+    f1 = os.path.join(config.current_data_directory, f10)
+    f20 = "%s_120000_%s-%s.png" % (str(nsbdata.Night).replace('-', ''),
+                                   config._device_shorttype,
+                                   config._observatory_name)
+    f2 = os.path.join(config.daily_graph_directory, f20)
+    output_filenames = [f1, f2]
 
     for output_filename in output_filenames:
         NSBPlot.save_figure(output_filename)
@@ -793,7 +778,7 @@ def make_plot(input_filename=None, send_emails=False, write_stats=False):
     if send_emails:
         import pysqm.email
         night_label = str(datetime.date.today() - timedelta(days=1))
-        pysqm.email.send_emails(night_label=night_label, Stat=NSBData.Statistics)
+        pysqm.email.send_emails(night_label=night_label, Stat=nsbdata.Statistics)
 
 
 # The following code allows to execute plot.py as a standalone program.

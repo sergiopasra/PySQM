@@ -117,7 +117,7 @@ def loop(config, mydevice):
             if niter % config._plot_each == 0:
                 # Each X minutes, plot a new graph
                 try:
-                    pysqm.plot.make_plot(send_emails=False, write_stats=False)
+                    pysqm.plot.make_plot(config, send_emails=False, write_stats=False)
                 except StandardError:
                     logger.warn('Problem plotting data.', exc_info=True)
 
@@ -138,13 +138,13 @@ def loop(config, mydevice):
                 mydevice.flush_cache(datastore)
                 if config._send_data_by_email:
                     try:
-                        pysqm.plot.make_plot(send_emails=True, write_stats=True)
+                        pysqm.plot.make_plot(config, send_emails=True, write_stats=True)
                     except StandardError:
                         logger.warn('Error plotting data / sending email.',exc_info=True)
 
                 else:
                     try:
-                        pysqm.plot.make_plot(send_emails=False, write_stats=True)
+                        pysqm.plot.make_plot(config, send_emails=False, write_stats=True)
                     except StandardError:
                         logger.warn('Problem plotting data.', exc_info=True)
 
@@ -207,6 +207,7 @@ def init_sqm_le(config):
 
 def  main():
     import argparse
+    # import ConfigParser
     import pysqm.settings as settings
 
     logging.basicConfig(level=logging.DEBUG)
@@ -219,6 +220,13 @@ def  main():
 
     configfilename = args.config
     logger.debug("Using configuration file: %s", configfilename)
+
+    # New instance with 'bar' and 'baz' defaulting to 'Life' and 'hard' each
+    # config = ConfigParser.SafeConfigParser({'bar': 'Life', 'baz': 'hard'})
+    # config.read('config.ini')
+
+    # print config.get('site', 'observatory_name') # -> "Python is fun!"
+    # print config.get('paths', 'daily_graph_directory') # -> "Life is hard!"
 
     # Load config contents into GlobalConfig
     settings.GlobalConfig.read_config_file(configfilename)
@@ -234,8 +242,12 @@ def  main():
     # Create directories if needed
     for directory in [config.monthly_data_directory,
                       config.daily_data_directory,
-                      config.current_data_directory]:
+                      config.current_data_directory,
+                      config.daily_graph_directory,
+                      config.current_graph_directory
+                      ]:
         if not os.path.exists(directory):
+            logger.debug('Create directory %s', directory)
             os.makedirs(directory)
 
     # Select the device to be used based on user input
