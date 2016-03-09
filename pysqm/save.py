@@ -21,12 +21,10 @@
 
 from __future__ import print_function
 
-import inspect
+
 import os
 import shutil
-
 import datetime
-import socket
 
 import pysqm.common
 import pysqm.observatory as obs
@@ -103,10 +101,11 @@ def format_content(timeutc_mean, timelocal_mean, temp_sensor,
 
 
 def save_data_datacenter(formatted_data, config, device):
-    '''
-    This function sends the data from this pysqm client to the central
+    """This function sends the data from this pysqm client to the central
     node @ UCM. It saves the data there (only the SQM data file contents)
-    '''
+    """
+
+    import socket
 
     # Connection details (hardcoded to avoid user changes)
     DC_HOST = "muon.gae.ucm.es"
@@ -157,11 +156,14 @@ def save_data_datacenter(formatted_data, config, device):
 
 
 def save_data_mysql(formatted_data, config):
-    import MySQLdb
-    '''
+    """
     Use the Python MySQL API to save the
     data to a database
-    '''
+    """
+
+    import MySQLdb
+    import inspect
+
     mydb = None
     values = formatted_data.split(';')
     try:
