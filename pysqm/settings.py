@@ -24,27 +24,6 @@ import os
 import sys
 
 
-class ArgParser(object):
-    def __init__(self):
-        self.parse_arguments()
-
-    def parse_arguments(self):
-        import argparse
-        # Return config filename
-        parser = argparse.ArgumentParser()
-        parser.add_argument('-c', '--config')
-        self.args = parser.parse_args()
-
-    def get_config_filename(self):
-        if self.args.config is None:
-            configfilename = "config.py"
-        else:
-            configfilename = self.args.config
-
-        print("Using configuration file: %s." % configfilename)
-        return configfilename
-
-
 class ConfigFile(object):
     def __init__(self, path="config.py"):
         # Guess the selected dir and config filename

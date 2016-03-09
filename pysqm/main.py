@@ -206,14 +206,19 @@ def init_sqm_le(config):
 
 
 def  main():
+    import argparse
     import pysqm.settings as settings
 
     logging.basicConfig(level=logging.DEBUG)
 
     logger = logging.getLogger('pysqm')
 
-    InputArguments = settings.ArgParser()
-    configfilename = InputArguments.get_config_filename()
+    parser = argparse.ArgumentParser(description="Python client for the Sky Quality Meter ")
+    parser.add_argument('-c', '--config', default="config.py", help="configuration file")
+    args = parser.parse_args()
+
+    configfilename = args.config
+    logger.debug("Using configuration file: %s", configfilename)
 
     # Load config contents into GlobalConfig
     settings.GlobalConfig.read_config_file(configfilename)
