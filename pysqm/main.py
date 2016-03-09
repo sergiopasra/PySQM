@@ -49,15 +49,17 @@ import pysqm.save
 
 def loop(config, mydevice):
 
+    logger = logging.getLogger('pysqm')
+
     datastore = pysqm.save.DataStore(config, mydevice)
 
     # Ephem is used to calculate moon position (if above horizon)
     # and to determine start-end times of the measures
-    logging.basicConfig(level=logging.DEBUG)
     observ = obs.define_ephem_observatory(config=config)
     niter = 0
     DaytimePrint = True
-    logging.info('Starting readings ...')
+    logger.info('Starting readings ...')
+
     while True:
         # The programs works as a daemon
         utcdt = obs.read_datetime()
@@ -80,7 +82,7 @@ def loop(config, mydevice):
                                                 PauseMeasures=10
                                                 )
             except StandardError as error:
-                logging.error('Connection lost, %s', error, exc_info=True)
+                logger.error('Connection lost, %s', error, exc_info=True)
                 # FIXME: not appropriated in all cases
                 if config._reboot_on_connlost:
                     time.sleep(600)
@@ -117,7 +119,7 @@ def loop(config, mydevice):
                 try:
                     pysqm.plot.make_plot(send_emails=False, write_stats=False)
                 except StandardError:
-                    logging.warn('Problem plotting data.', exc_info=True)
+                    logger.warn('Problem plotting data.', exc_info=True)
 
             if not DaytimePrint:
                 DaytimePrint = True
@@ -129,8 +131,8 @@ def loop(config, mydevice):
             # Daytime, print info
             if DaytimePrint:
                 utcdt = utcdt.strftime("%Y-%m-%d %H:%M:%S")
-                logging.info("%s", utcdt)
-                logging.info('Daytime. Waiting until %s', obs.next_sunset(observ, config._observatory_horizon))
+                logger.info("%s", utcdt)
+                logger.info('Daytime. Waiting until %s', obs.next_sunset(observ, config._observatory_horizon))
                 DaytimePrint = False
             if niter > 0:
                 mydevice.flush_cache(datastore)
@@ -138,13 +140,13 @@ def loop(config, mydevice):
                     try:
                         pysqm.plot.make_plot(send_emails=True, write_stats=True)
                     except StandardError:
-                        logging.warn('Error plotting data / sending email.',exc_info=True)
+                        logger.warn('Error plotting data / sending email.',exc_info=True)
 
                 else:
                     try:
                         pysqm.plot.make_plot(send_emails=False, write_stats=True)
                     except StandardError:
-                        logging.warn('Problem plotting data.', exc_info=True)
+                        logger.warn('Problem plotting data.', exc_info=True)
 
                 niter = 0
 
@@ -156,56 +158,59 @@ def loop(config, mydevice):
 
 
 def init_sqm_lu(config):
+    logger = logging.getLogger('pysqm')
     try:
-        logging.info('Trying fixed device address %s ... ', config._device_addr)
+        logger.info('Trying fixed device address %s ... ', config._device_addr)
         mydevice = pysqm.read.SQMLU(addr=config._device_addr)
         return mydevice
     except StandardError:
-        logging.warn('Device not found in %s', config._device_addr)
+        logger.warn('Device not found in %s', config._device_addr)
 
-    logging.info('Trying auto device address ...')
+    logger.info('Trying auto device address ...')
     autodev = pysqm.read.SQMLU.search(bauds=115200)
     if autodev is None:
-        logging.error('Device not found!')
+        logger.error('Device not found!')
         return None
 
-    logging.info('Found address %s ... ', autodev)
+    logger.info('Found address %s ... ', autodev)
     try:
         mydevice = pysqm.read.SQMLU(addr=autodev)
         return mydevice
     except StandardError:
-        logging.error('Device not found!')
+        logger.error('Device not found!')
         return None
 
 
 def init_sqm_le(config):
+    logger = logging.getLogger('pysqm')
     try:
-        logging.info('Trying fixed device address %s ... ', config._device_addr)
+        logger.info('Trying fixed device address %s ... ', config._device_addr)
         mydevice = pysqm.read.SQMLE(addr=config._device_addr)
         return mydevice
     except StandardError:
-        logging.warn('Device not found in %s', config._device_addr)
+        logger.warn('Device not found in %s', config._device_addr)
 
-    logging.info('Trying auto device address ...')
+    logger.info('Trying auto device address ...')
     autoaddr = pysqm.read.SQMLU.search()
     if autoaddr is None:
-        logging.error('Device not found!')
+        logger.error('Device not found!')
         return None
 
-    logging.info('Found address %s ... ', autoaddr)
+    logger.info('Found address %s ... ', autoaddr)
     try:
         mydevice = pysqm.read.SQMLU(addr=autoaddr)
         return mydevice
     except StandardError:
-        logging.error('Device not found!')
+        logger.error('Device not found!')
         return None
 
 
 def  main():
+    import pysqm.settings as settings
 
     logging.basicConfig(level=logging.DEBUG)
 
-    import pysqm.settings as settings
+    logger = logging.getLogger('pysqm')
 
     InputArguments = settings.ArgParser()
     configfilename = InputArguments.get_config_filename()
@@ -242,7 +247,7 @@ def  main():
             return 1
 
     else:
-        logging.error('Unknown device type %s', config._device_type)
+        logger.error('Unknown device type %s', config._device_type)
         return 1
 
     while(True):

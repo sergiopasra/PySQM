@@ -274,13 +274,15 @@ class SQMData(object):
         to make the plot.
         '''
 
+        logger = logging.getLogger(__name__)
+
         if np.size(self.premidnight.localdates) > 0:
             self.Night = np.unique([DT.date() for DT in self.premidnight.localdates])[0]
         elif np.size(self.aftermidnight.localdates) > 0:
             self.Night = np.unique([(DT - datetime.timedelta(hours=12)).date()
                                     for DT in self.aftermidnight.localdates])[0]
         else:
-            logging.warn('No Night detected.')
+            logger.warn('No Night detected.')
             self.Night = None
 
     def data_statistics(self, Ephem):
@@ -288,6 +290,8 @@ class SQMData(object):
         Make statistics on the data.
         Useful to summarize night conditions.
         '''
+
+        logger = logging.getLogger(__name__)
 
         def select_bests(values, number):
             return (np.sort(values)[::-1][0:number])
@@ -313,7 +317,7 @@ class SQMData(object):
             self.astronomical_night_temp = \
                 np.array(self.all_night_temp)[astronomical_night_filter]
         else:
-            logging.warn('< 10 points in astronomical night, using the whole night data instead')
+            logger.warn('< 10 points in astronomical night, using the whole night data instead')
             self.astronomical_night_sb = self.all_night_sb
             self.astronomical_night_temp = self.all_night_temp
 
@@ -493,8 +497,10 @@ class Plot(object):
         is used
         '''
 
+        logger = logging.getLogger(__name__)
+
         if np.size(Data.Night) != 1:
-            logging.warn('More than 1 night in the data file. Please check it! %d', np.size(Data.Night))
+            logger.warn('More than 1 night in the data file. Please check it! %d', np.size(Data.Night))
 
         # Mean datetime
         dts = Data.all_night_dt
@@ -566,6 +572,9 @@ class Plot(object):
         '''
 
         # Plot the data (NSB and temperature)
+
+        logger = logging.getLogger(__name__)
+
         TheData = Data.premidnight
         if np.size(TheData.filter) > 0:
             self.thegraph_time.plot(
@@ -610,7 +619,7 @@ class Plot(object):
             begin_plot_dt = end_plot_dt - datetime.timedelta(
                 hours=24 + config.limits_time[1] - config.limits_time[0])
         else:
-            logging.warn('Cannot calculate plot limits')
+            logger.warn('Cannot calculate plot limits')
             return None
 
         self.thegraph_time.set_xlim(begin_plot_dt, end_plot_dt)
@@ -645,6 +654,8 @@ def save_stats_to_file(Night, NSBData, Ephem):
     Save statistics to file
     '''
 
+    logger = logging.getLogger(__name__)
+
     Stat = NSBData.Statistics
 
     Header = \
@@ -676,7 +687,7 @@ def save_stats_to_file(Night, NSBData, Ephem):
         config.summary_data_directory + '/Statistics_' + \
         str(config._device_shorttype + '_' + config._observatory_name) + '.dat'
 
-    logging.info('Writing statistics file')
+    logger.info('Writing statistics file')
 
     def safe_create_file(filename):
         if not os.path.exists(filename):
@@ -739,15 +750,16 @@ def make_plot(input_filename=None, send_emails=False, write_stats=False):
      - Save statistics to file
      - Create the plot
     '''
+    logger = logging.getLogger(__name__)
 
-    logging.info('Ploting photometer data ...')
+    logger.info('Ploting photometer data ...')
 
     if (input_filename is None):
         input_filename = config.current_data_directory + \
                          '/' + config._device_shorttype + '_' + config._observatory_name + '.dat'
 
     # Define the observatory in ephem
-    Ephem = Ephemerids()
+    Ephem = Ephemerids(config)
 
     # Get and process the data from input_filename
     NSBData = SQMData(input_filename, Ephem)
