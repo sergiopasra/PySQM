@@ -29,6 +29,7 @@ from datetime import timedelta
 import ephem
 import numpy as np
 import matplotlib
+
 matplotlib.use('Agg')
 import matplotlib.ticker as ticker
 import matplotlib.pyplot as plt
@@ -36,7 +37,6 @@ import matplotlib.dates as mdates
 
 import pysqm.common
 from pysqm.common import format_value, format_value_list
-from pysqm.common import set_decimals
 import pysqm.observatory as obs
 
 
@@ -143,9 +143,9 @@ class SQMData(object):
         self.all_night_temp = []
 
         for variable in [
-                'utcdates', 'localdates', 'sun_altitudes',
-                'temperatures', 'tick_counts', 'frequencies',
-                'night_sbs', 'label_dates', 'sun_altitude']:
+            'utcdates', 'localdates', 'sun_altitudes',
+            'temperatures', 'tick_counts', 'frequencies',
+            'night_sbs', 'label_dates', 'sun_altitude']:
             setattr(self.premidnight, variable, [])
             setattr(self.aftermidnight, variable, [])
 
@@ -161,7 +161,7 @@ class SQMData(object):
         self.serial_number = format_value(serial_number_line.split(':')[-1])
 
     def check_validdata(self, data_line):
-        if (format_value(data_line)[0] != '#') and  (format_value(data_line)[0] != ''):
+        if (format_value(data_line)[0] != '#') and (format_value(data_line)[0] != ''):
             return True
         else:
             return False
@@ -448,7 +448,7 @@ class Plot(object):
 
         # self.thegraph_time.set_title('Sky Brightness (SQM-'+config._observatory_name+')',\
         # fontsize='x-large')
-        xlabel = 'Time (UTC%s)' %  UTC_offset_label
+        xlabel = 'Time (UTC%s)' % UTC_offset_label
         self.thegraph_time.set_xlabel(xlabel, fontsize='large')
         self.thegraph_time.set_ylabel('Sky Brightness (mag/arcsec2)', fontsize='medium')
 
@@ -635,7 +635,8 @@ class Plot(object):
                                 transform=self.thegraph_time.transAxes)
 
         if np.size(Data.Night) == 1:
-            self.thegraph_time.text(0.75, 1.015, 'Moon: %d%s (%d%s)' % (Ephem.moon_phase, "%", Ephem.moon_maxelev * 180. / np.pi, "$^\mathbf{o}$"),
+            self.thegraph_time.text(0.75, 1.015, 'Moon: %d%s (%d%s)' % (
+            Ephem.moon_phase, "%", Ephem.moon_maxelev * 180. / np.pi, "$^\mathbf{o}$"),
                                     color='black', fontsize='small', fontname='monospace',
                                     transform=self.thegraph_time.transAxes)
 
@@ -658,8 +659,8 @@ def save_stats_to_file(Night, NSBData, Ephem, config):
 
     Stat = NSBData.Statistics
 
-    Header = \
-        '# Summary statistics for ' + str(config._device_shorttype + '_' + config._observatory_name) + '\n' + \
+    header0 = \
+        '# Summary statistics for %s_%s\n' + \
         '# Description of columns (CSV file):\n' + \
         '# Col 1: Date\n' + \
         '# Col 2: Total measures\n' + \
@@ -671,17 +672,16 @@ def save_stats_to_file(Night, NSBData, Ephem, config):
         '# Col 8: Min Temp (C) between astronomical twilights\n' + \
         '# Col 9: Max Temp (C) between astronomical twilights\n\n'
 
-    formatted_data = \
-        str(Night) + ';' + \
-        str(Stat.number) + ';' + \
-        str(Stat.bests_number) + ';' + \
-        set_decimals(Stat.bests_median, 4) + ';' + \
-        set_decimals(Stat.bests_err, 4) + ';' + \
-        str(Stat.model_nterm) + ';' + \
-        set_decimals(Stat.data_model_abs_meandiff, 3) + ';' + \
-        set_decimals(Stat.min_temperature, 1) + ';' + \
-        set_decimals(Stat.max_temperature, 1) + \
-        '\n'
+    header = header0 % (config._device_shorttype, config._observatory_name)
+
+    values = (Night, Stat.number,
+              Stat.bests_number, Stat.bests_median,
+              Stat.bests_err, Stat.model_nterm,
+              Stat.data_model_abs_meandiff,
+              Stat.min_temperature,
+              Stat.max_temperature)
+
+    formatted_data = "%s;%s;%s;%.4f;%.4f;%s;%.3f;.1f;%.1f\n" % values
 
     sfname = 'Statistics_%s_%s.dat' % (config._device_shorttype, config._observatory_name)
 
@@ -705,10 +705,10 @@ def save_stats_to_file(Night, NSBData, Ephem, config):
         else:
             return True
 
-    if Header not in stat_file_content:
+    if header not in stat_file_content:
         stat_file_content = [line for line in stat_file_content.split('\n') if valid_line(line)]
         stat_file_content = '\n'.join(stat_file_content)
-        stat_file_content = Header + stat_file_content
+        stat_file_content = header + stat_file_content
         with open(statistics_filename, 'w') as thefile:
             thefile.write(stat_file_content)
 

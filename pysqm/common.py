@@ -25,27 +25,19 @@ def remove_linebreaks(data):
     data = data.replace('\r\n','')
     data = data.replace('\r','')
     data = data.replace('\n','')
-    return(data)
+    return data
 
 def format_value(data,remove_str=' '):
     # Remove string and spaces from data
     data = remove_linebreaks(data)
     data = data.replace(remove_str,'')
     data = data.replace(' ','')
-    return(data)
+    return data
 
 def format_value_list(data,remove_str=' '):
     # Remove string and spaces from data array/list
     data = [format_value(line,remove_str).split(';') for line in data]
-    return(data)
-
-def set_decimals(number,dec=3):
-    str_number = str(number)
-    int_,dec_ = str_number.split('.')
-    while len(dec_) <= dec:
-        dec_ = dec_ + '0'
-
-    return int_+'.'+dec_[:dec]
+    return data
 
 
 RAWHeaderContent = '''# Definition of the community standard for skyglow observations 1.0
