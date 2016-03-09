@@ -24,19 +24,16 @@ import os
 import sys
 
 
-class ArgParser:
-    def __init__(self,inputfile=False):
-        self.parse_arguments(inputfile)
+class ArgParser(object):
+    def __init__(self):
+        self.parse_arguments()
 
-    def parse_arguments(self,inputfile):
+    def parse_arguments(self):
         import argparse
         # Return config filename
-        self.parser = argparse.ArgumentParser()
-        self.parser.add_argument('-c', '--config', default="config.py")
-        if (inputfile):
-            self.parser.add_argument('-i', '--input', default=None)
-        args = self.parser.parse_args()
-        vars(self).update(args.__dict__)
+        parser = argparse.ArgumentParser()
+        parser.add_argument('-c', '--config')
+        self.args = parser.parse_args()
 
     def get_config_filename(self):
         if self.args.config is None:
@@ -47,11 +44,8 @@ class ArgParser:
         print("Using configuration file: %s." % configfilename)
         return configfilename
 
-    def print_help(self):
-        self.parser.print_help()
 
-
-class ConfigFile:
+class ConfigFile(object):
     def __init__(self, path="config.py"):
         # Guess the selected dir and config filename
         # Should accept:
@@ -61,7 +55,6 @@ class ConfigFile:
         # - relative path (exc. filename)
         # - shortcouts like ~ . etc
         self.path = path
-        self.config = None
 
     def read_config_file(self, path):
         # Get the absolute path

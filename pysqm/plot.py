@@ -23,8 +23,10 @@
 import os
 import sys
 import logging
+import datetime
 from datetime import timedelta
 
+import ephem
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
@@ -32,25 +34,15 @@ import matplotlib.ticker as ticker
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-
-from pysqm.common import *
-
-# Read configuration
-
-import pysqm.settings as settings
-
-config = settings.GlobalConfig.config
-
-for directory in [config.monthly_data_directory,
-                  config.daily_graph_directory,
-                  config.current_graph_directory]:
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+import pysqm.common
+from pysqm.common import format_value, format_value_list
+from pysqm.common import set_decimals
+import pysqm.observatory as obs
 
 
 class Ephemerids(object):
-    def __init__(self):
-        self.Observatory = define_ephem_observatory()
+    def __init__(self, config):
+        self.Observatory = obs.define_ephem_observatory(config)
 
     def ephem_date_to_datetime(self, ephem_date):
         # Convert ephem dates to datetime

@@ -22,8 +22,6 @@
 from __future__ import print_function
 
 import logging
-import inspect
-import os
 import struct
 import sys
 import time
@@ -34,15 +32,7 @@ import serial
 import numpy as np
 
 import pysqm.common
-import pysqm.settings as settings
-
-config = settings.GlobalConfig.config
-
-# If the old format (SQM_LE/SQM_LU) is used, replace _ with -
-config._device_type = config._device_type.replace('_', '-')
-
-if config._use_mysql:
-    import _mysql
+import pysqm.observatory as obs
 
 
 # Default, to ignore the length of the read string.
@@ -83,205 +73,11 @@ def filtered_mean(array, sigma=3):
     return (filtered_mean)
 
 
-class device(pysqm.common.observatory):
-
+class Device(object):
     def __init__(self):
-        # Get Photometer identification codes
-        self.protocol_number = 0
-        self.model_number = 0
-        self.feature_number = 0
-        self.serial_number = 0
         self.DataCache = ""
 
-    def standard_file_header(self):
-        # Data Header, at the end of this script.
-        header_content = pysqm.common.RAWHeaderContent
-
-        # Update data file header with observatory data
-        header_content = header_content.replace(
-            '$DEVICE_TYPE', str(config._device_type))
-        header_content = header_content.replace(
-            '$DEVICE_ID', str(config._device_id))
-        header_content = header_content.replace(
-            '$DATA_SUPPLIER', str(config._data_supplier))
-        header_content = header_content.replace(
-            '$LOCATION_NAME', str(config._device_locationname))
-        header_content = header_content.replace(
-            '$OBSLAT', str(config._observatory_latitude))
-        header_content = header_content.replace(
-            '$OBSLON', str(config._observatory_longitude))
-        header_content = header_content.replace(
-            '$OBSALT', str(config._observatory_altitude))
-        header_content = header_content.replace(
-            '$OFFSET', str(config._offset_calibration))
-
-        if config._local_timezone == 0:
-            header_content = header_content.replace(
-                '$TIMEZONE', 'UTC')
-        elif config._local_timezone > 0:
-            header_content = header_content.replace(
-                '$TIMEZONE', 'UTC+' + str(config._local_timezone))
-        elif config._local_timezone < 0:
-            header_content = header_content.replace(
-                '$TIMEZONE', 'UTC' + str(config._local_timezone))
-
-        header_content = header_content.replace(
-            '$PROTOCOL_NUMBER', str(self.protocol_number))
-        header_content = header_content.replace(
-            '$MODEL_NUMBER', str(self.model_number))
-        header_content = header_content.replace(
-            '$FEATURE_NUMBER', str(self.feature_number))
-        header_content = header_content.replace(
-            '$SERIAL_NUMBER', str(self.serial_number))
-
-        header_content = header_content.replace(
-            '$IXREADOUT', pysqm.common.remove_linebreaks(self.ix_readout))
-        header_content = header_content.replace(
-            '$RXREADOUT', pysqm.common.remove_linebreaks(self.rx_readout))
-        header_content = header_content.replace(
-            '$CXREADOUT', pysqm.common.remove_linebreaks(self.cx_readout))
-
-        return header_content
-
-    def format_content(self, timeutc_mean, timelocal_mean, temp_sensor,
-                       freq_sensor, ticks_uC, sky_brightness):
-        # Format a string with data
-        date_time_utc_str = str(
-            timeutc_mean.strftime("%Y-%m-%dT%H:%M:%S")) + '.000'
-        date_time_local_str = str(
-            timelocal_mean.strftime("%Y-%m-%dT%H:%M:%S")) + '.000'
-        temp_sensor_str = str('%.2f' % temp_sensor)
-        ticks_uC_str = str('%.3f' % ticks_uC)
-        freq_sensor_str = str('%.3f' % freq_sensor)
-        sky_brightness_str = str('%.3f' % sky_brightness)
-
-        formatted_data = \
-            date_time_utc_str + ";" + date_time_local_str + ";" + temp_sensor_str + ";" + \
-            ticks_uC_str + ";" + freq_sensor_str + ";" + sky_brightness_str + "\n"
-
-        return formatted_data
-
-    def define_filenames(self):
-        # Filenames should follow a standard based on observatory name and date.
-        date_time_file = self.local_datetime(
-            self.read_datetime()) - datetime.timedelta(hours=12)
-        date_file = date_time_file.date()
-        yearmonth = str(date_file)[0:7]
-        yearmonthday = str(date_file)[0:10]
-
-        self.monthly_datafile = \
-            config.monthly_data_directory + "/" + config._device_shorttype + \
-            "_" + config._observatory_name + "_" + yearmonth + ".dat"
-        # self.daily_datafile = \
-        # config.daily_data_directory+"/"+config._device_shorttype+\
-        # "_"+config._observatory_name+"_"+yearmonthday+".dat"
-        self.daily_datafile = \
-            config.daily_data_directory + "/" + \
-            yearmonthday.replace('-', '') + '_120000_' + \
-            config._device_shorttype + '-' + config._observatory_name + '.dat'
-        self.current_datafile = \
-            config.current_data_directory + "/" + config._device_shorttype + \
-            "_" + config._observatory_name + ".dat"
-
-    def save_data(self, formatted_data):
-        '''
-        Save data to file and duplicate to current
-        data file (the one that will be ploted)
-        '''
-        for each_file in [self.monthly_datafile, self.daily_datafile]:
-            if not os.path.exists(each_file):
-                with open(each_file, 'w') as datafile:
-                    datafile.write(self.standard_file_header())
-
-            with open(each_file, 'a+') as datafile:
-                datafile.write(formatted_data)
-
-        self.copy_file(self.daily_datafile, self.current_datafile)
-
-    def save_data_datacenter(self, formatted_data):
-        '''
-        This function sends the data from this pysqm client to the central
-        node @ UCM. It saves the data there (only the SQM data file contents)
-        '''
-
-        # Connection details (hardcoded to avoid user changes)
-        DC_HOST = "muon.gae.ucm.es"
-        DC_PORT = 8739
-        DEV_ID = str(config._device_id) + "_" + str(self.serial_number)
-
-        def send_data(data):
-            try:
-                client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                client.connect((DC_HOST, DC_PORT))
-                client.sendall(data)
-                client.shutdown(socket.SHUT_RDWR)
-                client.close()
-            except:
-                return 0
-            else:
-                return 1
-
-        def write_buffer():
-            success = 0
-            for data_line in self.DataBuffer[:]:
-                success = send_data(DEV_ID + ";;D;;" + data_line)
-                if (success == 1):
-                    self.DataBuffer.remove(data_line)
-
-            return success
-
-        # Send the new file initialization to the datacenter
-        # Appends the header to the buffer (it will be sent later)
-
-        if formatted_data == "NEWFILE":
-            self.DataBuffer = [hl + "\n" for hl in self.standard_file_header().split("\n")[:-1]]
-
-            # Try to connect with the datacenter and send the header
-            success = send_data(DEV_ID + ";;C;;")
-            success = write_buffer()
-            return (success)
-        else:
-            # Send the data to the datacenter
-
-            # If the buffer is full, dont append more data.
-            if (len(self.DataBuffer) < 10000):
-                self.DataBuffer.append(formatted_data)
-
-            # Try to connect with the datacenter and send the data
-            success = write_buffer()
-            return success
-
-    def save_data_mysql(self, formatted_data):
-        '''
-        Use the Python MySQL API to save the
-        data to a database
-        '''
-        mydb = None
-        values = formatted_data.split(';')
-        try:
-            # Start database connection
-            mydb = _mysql.connect(
-                host=config._mysql_host,
-                user=config._mysql_user,
-                passwd=config._mysql_pass,
-                db=config._mysql_database,
-                port=config._mysql_port)
-
-            # Insert the data
-            # FIXME: mysql injection possible
-            mydb.query(
-                "INSERT INTO " + str(config._mysql_dbtable) + " VALUES (NULL,'" + \
-                values[0] + "','" + values[1] + "'," + \
-                values[2] + "," + values[3] + "," + \
-                values[4] + "," + values[5] + ")")
-        except Exception as ex:
-            print(str(inspect.stack()[0][2:4][::-1]) +
-                  ' DB Error. Exception: %s' % str(ex))
-
-        if mydb:
-            mydb.close()
-
-    def data_cache(self, formatted_data, number_measures=1, niter=0):
+    def data_cache(self, formatted_data, store, number_measures=1, niter=0):
         '''
         Append data to DataCache str.
         If len(data)>number_measures, write to file
@@ -291,43 +87,34 @@ class device(pysqm.common.observatory):
         self.DataCache = self.DataCache + formatted_data
 
         if len(self.DataCache.split("\n")) >= number_measures + 1:
-            self.save_data(self.DataCache)
+            store.save_data(self.DataCache)
             self.DataCache = ""
             logging.info('%d\t%s', niter, formatted_data[:-1])
 
-    def flush_cache(self):
+    def flush_cache(self, store):
         ''' Flush the data cache '''
-        self.save_data(self.DataCache)
+        store.save_data(self.DataCache)
         self.DataCache = ""
 
-    def copy_file(self, source, destination):
-        # Copy file content from source to dest.
-        fichero_source = open(source, 'r')
-        contenido_source = fichero_source.read()
-        fichero_source.close()
-        # Create file and truncate it
-        fichero_destination = open(destination, 'w')
-        fichero_destination.close()
-        # Write content
-        fichero_destination = open(destination, 'r+')
-        fichero_destination.write(contenido_source)
-        fichero_destination.close()
 
-    def remove_currentfile(self):
-        # Remove a file from the host
-        if os.path.exists(self.current_datafile):
-            os.remove(self.current_datafile)
+class SQM(Device):
+    def __init__(self):
+        super(SQM, self).__init__()
+        # Get Photometer identification codes
+        self.protocol_number = 0
+        self.model_number = 0
+        self.feature_number = 0
+        self.serial_number = 0
 
+        self.ix_readout = ""
+        self.rx_readout = ""
+        self.cx_readout = ""
 
-class SQM(device):
-
-    def read_data(self, tries=1):
-        raise NotImplemented
 
     def pass_command(self, cmd):
         raise NotImplemented
 
-    def read_photometer(self, Nmeasures=1, PauseMeasures=2):
+    def read_photometer(self, dtz, Nmeasures=1, PauseMeasures=2):
         # Initialize values
         temp_sensor = []
         flux_sensor = []
@@ -336,7 +123,7 @@ class SQM(device):
         Nremaining = Nmeasures
 
         # Promediate N measures to remove jitter
-        timeutc_initial = self.read_datetime()
+        timeutc_initial = obs.read_datetime()
         while (Nremaining > 0):
             InitialDateTime = datetime.datetime.now()
 
@@ -356,14 +143,15 @@ class SQM(device):
             # sys.stdout.write('.')
             # sys.stdout.flush()
 
-            if (Nremaining > 0): time.sleep(max(1, PauseMeasures - DeltaSeconds))
+            if Nremaining > 0:
+                time.sleep(max(1, PauseMeasures - DeltaSeconds))
 
-        timeutc_final = self.read_datetime()
+        timeutc_final = obs.read_datetime()
         timeutc_delta = timeutc_final - timeutc_initial
 
         timeutc_mean = timeutc_initial + \
                        datetime.timedelta(seconds=int(timeutc_delta.seconds / 2. + 0.5))
-        timelocal_mean = self.local_datetime(timeutc_mean)
+        timelocal_mean = obs.local_datetime(timeutc_mean, dtz)
 
         # Calculate the mean of the data.
         temp_sensor = filtered_mean(temp_sensor)
@@ -528,21 +316,13 @@ class SQM(device):
 
 
 class SQMLE(SQM):
-    def __init__(self):
+    def __init__(self, addr, port=10001):
         """Search the photometer in the network and read its metadata"""
 
         super(SQMLE, self).__init__()
-        self.port = 10001
-
-        try:
-            logging.info('Trying fixed device address %s ... ', config._device_addr)
-            self.addr = config._device_addr
-            self.start_connection()
-        except:
-            print('Trying auto device address ...')
-            self.addr = self.search()
-            print('Found address %s ... ' % str(self.addr))
-            self.start_connection()
+        self.port = port
+        self.addr = addr
+        self.start_connection()
 
         # Clearing buffer
         logging.info('Clearing buffer ... |')
@@ -557,30 +337,29 @@ class SQMLE(SQM):
         time.sleep(1)
         self.rx_readout = self.read_data(tries=10)
 
-    def search(self):
+    @staticmethod
+    def search():
         """Search SQM LE in the LAN. Return its adress"""
-        self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.s.setblocking(False)
+
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setblocking(False)
 
         if hasattr(socket, 'SO_BROADCAST'):
-            self.s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-        self.s.sendto("000000f6".decode("hex"), ("255.255.255.255", 30718))
-        buf = ''
+        s.sendto("000000f6".decode("hex"), ("255.255.255.255", 30718))
         starttime = time.time()
 
-        print("Looking for replies; press Ctrl-C to stop.")
         addr = [None, None]
         while True:
             try:
-                (buf, addr) = self.s.recvfrom(30)
+                (buf, addr) = s.recvfrom(30)
                 if buf[3].encode("hex") == "f7":
-                    print("Received from %s: MAC: %s" % (addr, buf[24:30].encode("hex")))
+                    logging.info("Received from %s: MAC: %s", addr, buf[24:30].encode("hex"))
             except:
                 # Timeout in seconds. Allow all devices time to respond
                 if time.time() - starttime > 3:
                     break
-                pass
 
         if addr[0] is None:
             logging.error('Device not found!')

@@ -43,86 +43,44 @@ config = settings.GlobalConfig.config
 import pysqm.read
 import pysqm.plot
 import pysqm.common
-
-# Conditional imports
-
-# If the old format (SQM_LE/SQM_LU) is used, replace _ with -
-config._device_type = config._device_type.replace('_', '-')
-
-if config._device_type == 'SQM-LE':
-    pass
-elif config._device_type == 'SQM-LU':
-    pass
-if config._use_mysql:
-    pass
-
-# Create directories if needed
-for directory in [config.monthly_data_directory, config.daily_data_directory, config.current_data_directory]:
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-
-# Select the device to be used based on user input
-# and start the measures
-
-if config._device_type == 'SQM-LU':
-    try:
-        logging.info('Trying fixed device address %s ... ', config._device_addr)
-        mydevice = pysqm.read.SQMLU(addr=config._device_addr)
-    except StandardError:
-        logging.warn('Device not found in %s', config._device_addr)
-
-    logging.info('Trying auto device address ...')
-    autodev = pysqm.read.SQMLU.search(bauds=115200)
-    if autodev is None:
-        logging.error('Device not found!')
-        exit(0)
-
-    logging.info('Found address %s ... ', autodev)
-
-    try:
-        mydevice = pysqm.read.SQMLU(addr=autodev)
-    except StandardError:
-        logging.error('Device not found!')
-        exit(0)
-
-elif config._device_type == 'SQM-LE':
-    mydevice = pysqm.read.SQMLE()
-else:
-    logging.error('Unknown device type %s', config._device_type)
-    exit(0)
+import pysqm.observatory as obs
+import pysqm.save
 
 
-def loop():
+def loop(config, mydevice):
+
+    datastore = pysqm.save.DataStore(config, mydevice)
 
     # Ephem is used to calculate moon position (if above horizon)
     # and to determine start-end times of the measures
     logging.basicConfig(level=logging.DEBUG)
-    observ = pysqm.common.define_ephem_observatory()
+    observ = obs.define_ephem_observatory(config=config)
     niter = 0
     DaytimePrint = True
     logging.info('Starting readings ...')
     while True:
         # The programs works as a daemon
-        utcdt = mydevice.read_datetime()
+        utcdt = obs.read_datetime()
         # print (str(mydevice.local_datetime(utcdt))),
-        if True or mydevice.is_nighttime(observ):
+        if True or obs.is_nighttime(observ, config._observatory_horizon):
             # If we are in a new night, create the new file.
             config._send_to_datacenter = False  ### Not enabled by default
             if config._send_to_datacenter and (niter == 0):
-                mydevice.save_data_datacenter("NEWFILE")
+                pysqm.save.save_data_datacenter("NEWFILE", config, mydevice)
 
             StartDateTime = datetime.datetime.now()
             niter += 1
 
-            mydevice.define_filenames()
+            datastore.define_filenames(config)
 
             # Get values from the photometer
             try:
-                data = mydevice.read_photometer(Nmeasures=config._measures_to_promediate,
+                data = mydevice.read_photometer(dtz=config._local_timezone,
+                                                Nmeasures=config._measures_to_promediate,
                                                 PauseMeasures=10
                                                 )
-            except:
-                logging.info('Connection lost')
+            except StandardError as error:
+                logging.error('Connection lost, %s', error, exc_info=True)
                 # FIXME: not appropriated in all cases
                 if config._reboot_on_connlost:
                     time.sleep(600)
@@ -135,7 +93,7 @@ def loop():
             (timeutc_mean, timelocal_mean, temp_sensor,
              freq_sensor, ticks_uC, sky_brightness) = data
 
-            formatted_data = mydevice.format_content(
+            formatted_data = pysqm.save.format_content(
                 timeutc_mean,
                 timelocal_mean,
                 temp_sensor,
@@ -145,12 +103,12 @@ def loop():
             )
 
             if config._use_mysql:
-                mydevice.save_data_mysql(formatted_data)
+                pysqm.save.save_data_mysql(formatted_data, config)
 
             if config._send_to_datacenter:
-                mydevice.save_data_datacenter(formatted_data)
+                pysqm.save.save_data_datacenter(formatted_data, config, mydevice)
 
-            mydevice.data_cache(formatted_data,
+            mydevice.data_cache(formatted_data, datastore,
                                 number_measures=config._cache_measures,
                                 niter=niter)
 
@@ -158,7 +116,7 @@ def loop():
                 # Each X minutes, plot a new graph
                 try:
                     pysqm.plot.make_plot(send_emails=False, write_stats=False)
-                except:
+                except StandardError:
                     logging.warn('Problem plotting data.', exc_info=True)
 
             if not DaytimePrint:
@@ -172,26 +130,130 @@ def loop():
             if DaytimePrint:
                 utcdt = utcdt.strftime("%Y-%m-%d %H:%M:%S")
                 logging.info("%s", utcdt)
-                logging.info('Daytime. Waiting until %s', mydevice.next_sunset(observ))
+                logging.info('Daytime. Waiting until %s', obs.next_sunset(observ, config._observatory_horizon))
                 DaytimePrint = False
             if niter > 0:
-                mydevice.flush_cache()
+                mydevice.flush_cache(datastore)
                 if config._send_data_by_email:
                     try:
                         pysqm.plot.make_plot(send_emails=True, write_stats=True)
-                    except:
+                    except StandardError:
                         logging.warn('Error plotting data / sending email.',exc_info=True)
 
                 else:
                     try:
                         pysqm.plot.make_plot(send_emails=False, write_stats=True)
-                    except:
+                    except StandardError:
                         logging.warn('Problem plotting data.', exc_info=True)
 
                 niter = 0
 
             # Send data that is still in the datacenter buffer
             if config._send_to_datacenter:
-                mydevice.save_data_datacenter("")
+                pysqm.save.save_data_datacenter("", config, mydevice)
 
             time.sleep(300)
+
+
+def init_sqm_lu(config):
+    try:
+        logging.info('Trying fixed device address %s ... ', config._device_addr)
+        mydevice = pysqm.read.SQMLU(addr=config._device_addr)
+        return mydevice
+    except StandardError:
+        logging.warn('Device not found in %s', config._device_addr)
+
+    logging.info('Trying auto device address ...')
+    autodev = pysqm.read.SQMLU.search(bauds=115200)
+    if autodev is None:
+        logging.error('Device not found!')
+        return None
+
+    logging.info('Found address %s ... ', autodev)
+    try:
+        mydevice = pysqm.read.SQMLU(addr=autodev)
+        return mydevice
+    except StandardError:
+        logging.error('Device not found!')
+        return None
+
+
+def init_sqm_le(config):
+    try:
+        logging.info('Trying fixed device address %s ... ', config._device_addr)
+        mydevice = pysqm.read.SQMLE(addr=config._device_addr)
+        return mydevice
+    except StandardError:
+        logging.warn('Device not found in %s', config._device_addr)
+
+    logging.info('Trying auto device address ...')
+    autoaddr = pysqm.read.SQMLU.search()
+    if autoaddr is None:
+        logging.error('Device not found!')
+        return None
+
+    logging.info('Found address %s ... ', autoaddr)
+    try:
+        mydevice = pysqm.read.SQMLU(addr=autoaddr)
+        return mydevice
+    except StandardError:
+        logging.error('Device not found!')
+        return None
+
+
+def  main():
+
+    logging.basicConfig(level=logging.DEBUG)
+
+    import pysqm.settings as settings
+
+    InputArguments = settings.ArgParser()
+    configfilename = InputArguments.get_config_filename()
+
+    # Load config contents into GlobalConfig
+    settings.GlobalConfig.read_config_file(configfilename)
+
+    # Get the actual config
+    config = settings.GlobalConfig.config
+    # Conditional imports
+
+    # If the old format (SQM_LE/SQM_LU) is used, replace _ with -
+    config._device_type = config._device_type.replace('_', '-')
+
+
+    # Create directories if needed
+    for directory in [config.monthly_data_directory,
+                      config.daily_data_directory,
+                      config.current_data_directory]:
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+    # Select the device to be used based on user input
+    # and start the measures
+
+    if config._device_type == 'SQM-LU':
+        mydevice = init_sqm_lu(config)
+        if mydevice is None:
+            return 1
+
+    elif config._device_type == 'SQM-LE':
+        mydevice = init_sqm_le(config)
+        if mydevice is None:
+            return 1
+
+    else:
+        logging.error('Unknown device type %s', config._device_type)
+        return 1
+
+    while(True):
+        # Loop forever to make sure the program does not die.
+        #try:
+        loop(config, mydevice)
+        # except Exception as e:
+        #     print('')
+        #     print('FATAL ERROR while running the main loop !!')
+        #     print('Error was:')
+        #     print(e)
+        #     print('Trying to restart')
+        #     print('')
+
