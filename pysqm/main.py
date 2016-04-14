@@ -64,7 +64,7 @@ def loop(config, mydevice):
         # The programs works as a daemon
         utcdt = obs.read_datetime()
         # print (str(mydevice.local_datetime(utcdt))),
-        if True or obs.is_nighttime(observ, config._observatory_horizon):
+        if obs.is_nighttime(observ, config._observatory_horizon):
             # If we are in a new night, create the new file.
             config._send_to_datacenter = False  ### Not enabled by default
             if config._send_to_datacenter and (niter == 0):
